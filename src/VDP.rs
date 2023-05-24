@@ -98,7 +98,7 @@ static PALETTE_64: [&'static Color; 64] = [&COLOUR_LOOKUP[0x00], &COLOUR_LOOKUP[
 
 static VIDEO_MODES: [VideoMode; 4] = [VideoMode{colors: 2, screen_width: 1024, screen_height: 768, refresh_rate: 60, palette: &PALETTE_2},
                                     VideoMode{colors: 16, screen_width: 512, screen_height: 384, refresh_rate: 60, palette: &PALETTE_16},
-                                    VideoMode{colors: 64, screen_width: 320, screen_height: 240, refresh_rate: 75, palette: &PALETTE_64},
+                                    VideoMode{colors: 64, screen_width: 320, screen_height: 200, refresh_rate: 75, palette: &PALETTE_64},
                                     VideoMode{colors: 16, screen_width: 640, screen_height: 480, refresh_rate: 60, palette: &PALETTE_16}];
 
 pub struct VDP<'a> {
