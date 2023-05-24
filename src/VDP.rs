@@ -270,7 +270,7 @@ impl VDP<'_> {
     }
 
     
-    pub fn cls(&mut self) {
+    fn cls(&mut self) {
         self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
             texture_canvas.set_draw_color(self.background_color);
             texture_canvas.clear();
@@ -279,7 +279,7 @@ impl VDP<'_> {
         self.cursor.position_y = 0;
     }
     
-    pub fn clg(&mut self) {
+    fn clg(&mut self) {
         self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
             texture_canvas.set_draw_color(self.background_color);
             texture_canvas.clear();
@@ -287,14 +287,18 @@ impl VDP<'_> {
     }
 
     pub fn color(&mut self, c: u8) {
-        
+        if c < 128 {
+            self.foreground_color = *self.current_video_mode.palette[c as usize % self.current_video_mode.palette.len()];
+        } else {
+            self.background_color = *self.current_video_mode.palette[c as usize % self.current_video_mode.palette.len()];
+        }
     }
 
-    pub fn gcolor(&mut self, m: u8, c: u8) {
-        
+    pub fn gcolor(&mut self, _m: u8, c: u8) {
+        self.graph_color = *self.current_video_mode.palette[c as usize % self.current_video_mode.palette.len()];
     }    
 
-    pub fn scale(&self, p: Point) -> Point {
+    fn scale(&self, p: Point) -> Point {
         if self.logical_coords
         {
             Point::new(p.x*self.cursor.screen_width/1280, p.y*self.cursor.screen_height/1024)
@@ -305,7 +309,7 @@ impl VDP<'_> {
         }
     }
 
-    pub fn translate(&self, p: Point) -> Point {
+    fn translate(&self, p: Point) -> Point {
         if self.logical_coords
         {
             Point::new(p.x+self.graph_origin.x, self.cursor.screen_height - p.y - self.graph_origin.y)
@@ -316,10 +320,10 @@ impl VDP<'_> {
         }
     }
 
-    // Return the x coorinates for each y coordinate of the line from point
+    // Return the x coordinates for each y coordinate of the line from point
     // top to the point bot. top.x and bot.x are included unless we have a
     // horizontal line, in which case we have only bot.x
-    pub fn line_xcoords(top : Point, bot : Point) -> Vec<i32> {
+    fn line_xcoords(top : Point, bot : Point) -> Vec<i32> {
         let mut xc = Vec::<i32>::new();
         let dy = (bot.y - top.y).abs();
         let dx = (top.x - bot.x).abs();
@@ -384,7 +388,7 @@ impl VDP<'_> {
         xc
     }
     
-    pub fn plot(&mut self, mode: u8, x: i16, y: i16) {
+    fn plot(&mut self, mode: u8, x: i16, y: i16) {
         self.p3 = self.p2;
         self.p2 = self.p1;
         self.p1 = self.translate(self.scale(Point::new(x as i32,y as i32)));
@@ -536,20 +540,15 @@ impl VDP<'_> {
                     },
                     0x11 => {
                         let c = self.read_byte();
-                        self.color(c);
                         println!("COLOUR {}",c);
-                        if c < 128 {
-                            self.foreground_color = *self.current_video_mode.palette[c as usize % self.current_video_mode.palette.len()];
-                        } else {
-                            self.background_color = *self.current_video_mode.palette[c as usize % self.current_video_mode.palette.len()];
-                        }
+                        self.color(c);
+
                     },
                     0x12 => {
                         let m = self.read_byte();
                         let c = self.read_byte();
-                        self.gcolor(m,c);
                         println!("GCOL {},{}",m,c);
-                        self.graph_color = *self.current_video_mode.palette[c as usize % self.current_video_mode.palette.len()];
+                        self.gcolor(m,c);
                     },
                     0x13 => {
                         let l = self.read_byte();
@@ -570,37 +569,7 @@ impl VDP<'_> {
                         match self.read_byte() {
                             0x00 => {
                                 println!("Video System Control.");
-                                match self.read_byte() {
-                                    0x80 => {
-                                        println!("VDP_GP.");
-                                        let mut packet = Vec::new();
-                                        packet.push(self.read_byte());
-                                        self.send_packet(0x00, packet.len() as u8, &mut packet);
-                                    },
-                                    0x81 => println!("VDP_KEYCODE"),
-                                    0x82 => {
-                                        println!("Send Cursor Position");
-                                        self.send_cursor_position();
-                                    },
-                                    0x85 => {
-                                        let channel = self.read_byte();
-                                        let waveform = self.read_byte();
-                                        let volume = self.read_byte();
-                                        let frequency = self.read_word();
-                                        let duration = self.read_word();
-                                        println!("VDP_AUDIO?: channel:{} waveform:{} volume:{} frequency:{} duration:{}", channel, waveform, volume, frequency, duration);
-                                    }
-                                    0x86 => {
-                                        println!("Mode Information");
-                                        self.send_mode_information();
-                                    },
-                                    0xC0 => {
-                                        let b = self.read_byte();
-                                        self.logical_coords = (b!=0);
-                                        println!("Set logical coords {}\n",self.logical_coords);
-                                    }
-                                    n => println!("Unknown VSC command: {:#02X?}.", n),
-                                }
+                                self.video_system_control();
                             },
                             0x01 => println!("Cursor Control?"),
                             0x07 => println!("Scroll?"),
@@ -651,6 +620,49 @@ impl VDP<'_> {
             },
             Err(_e) => ()
         }
+    }
+
+    fn video_system_control(&mut self) {
+        match self.read_byte() {
+            0x80 => {
+                println!("VDP_GP.");
+                self.general_poll();
+            },
+            0x81 => println!("VDP_KEYCODE?"),
+            0x82 => {
+                println!("Send Cursor Position");
+                self.send_cursor_position();
+            },
+            0x85 => {
+                println!("VDP_AUDIO");
+                self.audio();
+            }
+            0x86 => {
+                println!("Mode Information");
+                self.send_mode_information();
+            },
+            0xC0 => {
+                let b = self.read_byte();
+                self.logical_coords = (b!=0);
+                println!("Set logical coords {}\n",self.logical_coords);
+            }
+            n => println!("Unknown VSC command: {:#02X?}.", n),
+        }
+    }
+
+    fn audio(&mut self) {
+        let channel = self.read_byte();
+        let waveform = self.read_byte();
+        let volume = self.read_byte();
+        let frequency = self.read_word();
+        let duration = self.read_word();
+        println!("channel:{} waveform:{} volume:{} frequency:{} duration:{}", channel, waveform, volume, frequency, duration);
+    }
+
+    fn general_poll(&mut self) {
+        let mut packet = Vec::new();
+        packet.push(self.read_byte());
+        self.send_packet(0x00, packet.len() as u8, &mut packet);
     }
 
     fn check_scrolling_needed(&mut self) {
