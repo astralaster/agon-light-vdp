@@ -488,6 +488,7 @@ impl VDP<'_> {
                     let pat = &self.FONT_DATA[i*8..i*8+8];
                     if *pat == bitmap {
                         c = i as u8  + 32;
+                        break;
                     }
                 }
             });            
@@ -514,7 +515,7 @@ impl VDP<'_> {
     
     pub fn send_key(&self, keycode: u8, down: bool){
         let mut keyboard_packet: Vec<u8> = vec![keycode, 0, 0, down as u8];
-		self.send_packet(0x1, keyboard_packet.len() as u8, &mut keyboard_packet);
+	self.send_packet(0x1, keyboard_packet.len() as u8, &mut keyboard_packet);
     }
 
     fn send_cursor_position(&self) {
@@ -642,7 +643,7 @@ impl VDP<'_> {
                                 let d = self.read_byte();
                                 let m = self.read_byte();
                                 println!("Scroll: full {} dir {} movement {}",extent,d,m);
-                                self.do_scroll(extent!=0, d, m);    
+                                self.scroll(extent!=0, d, m);    
                             },
                             0x1B => println!("Sprite Control?"),
                             n if n>=32 => {
@@ -735,7 +736,7 @@ impl VDP<'_> {
         }
     }
 
-    fn do_scroll(&mut self, fullscreen: bool, direction: u8, delta: u8) {
+    fn scroll(&mut self, fullscreen: bool, direction: u8, delta: u8) {
         let mut xsrc : i32 = 0;
         let mut xdst : i32 = 0;
         let mut ysrc : i32 = 0;
@@ -781,6 +782,9 @@ impl VDP<'_> {
         let frequency = self.read_word();
         let duration = self.read_word();
         println!("channel:{} waveform:{} volume:{} frequency:{} duration:{}", channel, waveform, volume, frequency, duration);
+        let res = true;
+        let mut audio_packet: Vec<u8> = vec![channel, res as u8];
+        self.send_packet(0x5, audio_packet.len() as u8, &mut audio_packet);
     }
 
     fn general_poll(&mut self) {
