@@ -17,6 +17,7 @@ use chrono::{Local,DateTime,Datelike,Timelike};
 mod audio;
 use audio::audio::AudioChannels;
 use sdl2::AudioSubsystem;
+mod keymap;
 
 struct Cursor {
     position_x: i32,
@@ -217,8 +218,21 @@ impl VDP<'_> {
         }
     }
 
-    pub fn send_key(&self, keycode: u8, down: bool) {
-        let mut keyboard_packet: Vec<u8> = vec![keycode, 0, 0, down as u8];
+    pub fn send_key(&self, scancode: Scancode, keymod: Mod, down: bool) {
+        let fabgl_vk = keymap::keymap::sdl_scancode_to_fbgl_virtual_key(scancode, keymod);
+        let ascii = keymap::keymap::fabgl_virtual_key_to_ascii(&fabgl_vk);
+
+        let mut modifiers: u8 = 0;
+        if keymod.contains(Mod::LCTRLMOD) || keymod.contains(Mod::RCTRLMOD)   { modifiers |= 0b00000001; }
+        if keymod.contains(Mod::LSHIFTMOD) || keymod.contains(Mod::RSHIFTMOD) { modifiers |= 0b00000010; }
+        if keymod.contains(Mod::LALTMOD)                                      { modifiers |= 0b00000100; }
+        if keymod.contains(Mod::RALTMOD)                                      { modifiers |= 0b00001000; }
+        if keymod.contains(Mod::CAPSMOD)                                      { modifiers |= 0b00010000; }
+        if keymod.contains(Mod::NUMMOD)                                       { modifiers |= 0b00100000; }
+        // SCROLLLOCK is not supported by SDL2
+        if keymod.contains(Mod::LGUIMOD) || keymod.contains(Mod::RGUIMOD)     { modifiers |= 0b10000000; }
+
+        let mut keyboard_packet: Vec<u8> = vec![ascii, modifiers, fabgl_vk as u8, down as u8];
 	    self.send_packet(0x1, keyboard_packet.len() as u8, &mut keyboard_packet);
     }
 
