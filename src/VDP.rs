@@ -312,7 +312,8 @@ impl VDP<'_> {
     fn translate(&self, p: Point) -> Point {
         if self.logical_coords
         {
-            Point::new(p.x+self.graph_origin.x, self.cursor.screen_height - p.y - self.graph_origin.y)
+            Point::new(p.x+self.graph_origin.x,
+                       self.cursor.screen_height - 1 - p.y - self.graph_origin.y)
         }
         else
         {
@@ -341,7 +342,7 @@ impl VDP<'_> {
                         t = t+dy;
                         if (t>0) {
                             t=t-dx;
-                            if (x!=top.x && x!=bot.x && y!=bot.y && y!=top.y) { 
+                            if (y!=bot.y && y!=top.y) { 
                                 xc.push(x);
                             }
                             y=y+1;
@@ -352,7 +353,7 @@ impl VDP<'_> {
                         t = t+dy;
                         if (t>0) {
                             t=t-dx;
-                            if (x!=top.x && x!=bot.x && y!=bot.y && y!=top.y) { 
+                            if (y!=bot.y && y!=top.y) { 
                                 xc.push(x);
                             }
                             y=y+1;
@@ -378,13 +379,7 @@ impl VDP<'_> {
                 }
             }
         }
-        println!("returned list size = {} dy={}",xc.len(),bot.y-top.y);
-        if (xc.len() as i32) < bot.y-top.y+1 {
-            xc.push(bot.x);
-            println!("unexpected coordinate list too short adding one");
-        } else if (xc.len() as i32) > bot.y-top.y+1 {
-            println!("unexpected coordinate list too long");
-        }
+        assert!((xc.len() as i32) == bot.y-top.y+1,"Number of x coordinates does not match y range");
         xc
     }
     
@@ -423,6 +418,9 @@ impl VDP<'_> {
                         (pmid,pbot) = (pbot,pmid);
                     }
                     println!("Points are {},{}  {},{} {},{}",ptop.x,ptop.y,pmid.x,pmid.y,pbot.x,pbot.y);
+                    // Trace the line from top to bottom using Bresenham algo.
+                    // Also trace the lines from top via mid to bottom.
+                    // Draw horizontal lines between them.
                     let xv1 = Self::line_xcoords(ptop, pbot);
                     let mut xv2 = Self::line_xcoords(ptop, pmid);
                     xv2.append((&mut Self::line_xcoords(pmid,pbot)[1..].to_vec()));
@@ -461,6 +459,26 @@ impl VDP<'_> {
         });        
     }    
 
+    pub fn get_screen_char(&self, x: i16, y: i16) -> u8 {
+        0
+    }
+
+    pub fn get_screen_pixel(&mut self, x: i16, y: i16) -> Color {
+        let p1 = self.translate(self.scale(Point::new(x as i32,y as i32)));
+        let mut rgb = Color::RGB(0,0,0);
+        if (p1.x >=0 && p1.x < self.current_video_mode.screen_width as i32 &&
+            p1.y >=0 && p1.y < self.current_video_mode.screen_height as i32) {
+            self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
+                let rect = Rect::new(p1.x, p1.y, 1, 1);
+                let v=texture_canvas.read_pixels(rect,PixelFormatEnum::RGB888).unwrap();
+                println!("Pixel data = {},{},{},{}",v[0],v[1],v[2],v[3]);
+                rgb.r=v[2]; 
+                rgb.g=v[1]; 
+                rgb.b=v[0]; 
+            });
+        }
+        rgb
+    }
     
     pub fn send_key(&self, keycode: u8, down: bool){
         let mut keyboard_packet: Vec<u8> = vec![keycode, 0, 0, down as u8];
@@ -473,6 +491,17 @@ impl VDP<'_> {
         self.send_packet(0x02, cursor_position_packet.len() as u8, &mut cursor_position_packet);	
     }
 
+    fn send_screen_char(&self, c : u8) {
+        let mut screen_char_packet: Vec<u8> = vec![c];
+        self.send_packet(0x03, screen_char_packet.len() as u8, &mut screen_char_packet);	        
+    }
+
+    fn send_screen_pixel(&self, rgb : Color) {
+        let c = self.current_video_mode.palette.iter().position(|&e| *e==rgb).unwrap() as u8;
+        let mut screen_pixel_packet: Vec<u8> = vec![rgb.r, rgb.g, rgb.b, c];
+        self.send_packet(0x04, screen_pixel_packet.len() as u8, &mut screen_pixel_packet);	        
+    }
+    
     pub fn sdl_scancode_to_mos_keycode(scancode: sdl2::keyboard::Scancode, keymod: sdl2::keyboard::Mod) -> u8{
         match scancode {
             Scancode::Left => 0x08,
@@ -633,10 +662,24 @@ impl VDP<'_> {
                 println!("Send Cursor Position");
                 self.send_cursor_position();
             },
+            0x83 => {
+                let x = self.read_word();
+                let y = self.read_word();
+                let c = self.get_screen_char(x,y);
+                println!("Get screen char at {},{} = {}",x,y,c);
+                self.send_screen_char(c);
+            },
+            0x84 => {
+                let x = self.read_word();
+                let y = self.read_word();
+                let rgb = self.get_screen_pixel(x,y);
+                println!("Get screen pixel at {},{}",x,y);
+                self.send_screen_pixel(rgb);
+            },
             0x85 => {
                 println!("VDP_AUDIO");
                 self.audio();
-            }
+            },
             0x86 => {
                 println!("Mode Information");
                 self.send_mode_information();
