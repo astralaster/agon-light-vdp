@@ -13,6 +13,8 @@ use sdl2::surface::Surface;
 use sdl2::video::{Window, WindowContext};
 mod font;
 use font::font::FONT_BYTES;
+use chrono::{Local,DateTime,Datelike,Timelike};
+
 struct Cursor {
     position_x: i32,
     position_y: i32,
@@ -700,7 +702,10 @@ impl VDP<'_> {
                 println!("VDP_GP.");
                 self.general_poll();
             },
-            0x81 => println!("VDP_KEYCODE?"),
+            0x81 => {
+                println!("Set keyboard layout");
+                self.read_byte();
+            },
             0x82 => {
                 println!("Send Cursor Position");
                 self.send_cursor_position();
@@ -726,6 +731,21 @@ impl VDP<'_> {
             0x86 => {
                 println!("Mode Information");
                 self.send_mode_information();
+            },
+            0x87 => {
+                let m = self.read_byte();
+                if m==0 {
+                    self.send_time();
+                } else {
+                    // Set RTC not implemented.
+                    for _ in 0..6 {
+                        self.read_byte(); // just consume the parameters.
+                    }
+                }
+            },
+            0x88 => {
+                println!("Keyboard State");
+                self.keyboard_state();
             },
             0xC0 => {
                 let b = self.read_byte();
@@ -793,6 +813,14 @@ impl VDP<'_> {
         self.send_packet(0x00, packet.len() as u8, &mut packet);
     }
 
+    fn keyboard_state(&mut self) {
+        let d = self.read_byte();
+        let r = self.read_byte();
+        let b = self.read_byte(); // Just consume those bytes, don't implement.
+        let mut packet: Vec<u8> = vec![0, 0, 0, 0, 0];
+        self.send_packet(0x08, packet.len() as u8, &mut packet);        
+    }
+        
     fn check_scrolling_needed(&mut self) {
         let overdraw = self.cursor.position_y - self.current_video_mode.screen_height as i32 + self.cursor.font_height;
         if overdraw > 0 {
@@ -822,5 +850,22 @@ impl VDP<'_> {
             self.current_video_mode.colors,
          ];
         self.send_packet(0x06, packet.len() as u8, &mut packet);
+    }
+
+    fn send_time(&mut self) {
+        let now: DateTime<Local> = Local::now();
+        println!("Read RTC: {}",now);
+        let yr = now.year(); // year
+        let mo = now.month(); // month 1..12
+        let d = now.day(); // day 1..31
+        let wd = now.weekday().num_days_from_sunday(); // day of week 0=Sun .. 6=Sat
+        let hr = now.hour(); // Hour
+        let mi = now.minute();  // Minute
+        let s = now.second();   // Second
+        let mut packet: Vec<u8> = vec![(yr-1980) as u8, (mo-1) as u8, d as u8,
+                                       0, wd as u8,
+                                       hr as u8, mi as u8, s as u8];
+        self.send_packet(0x07, packet.len() as u8, &mut packet);        
+
     }
 }
