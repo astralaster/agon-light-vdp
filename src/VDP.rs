@@ -13,6 +13,8 @@ use sdl2::surface::Surface;
 use sdl2::video::{Window, WindowContext};
 mod font;
 use font::font::FONT_BYTES;
+use chrono::{Local,DateTime,Datelike,Timelike};
+
 struct Cursor {
     position_x: i32,
     position_y: i32,
@@ -112,6 +114,7 @@ pub struct VDP<'a> {
     background_color: sdl2::pixels::Color,
     graph_color: sdl2::pixels::Color,
     cursor_active: bool,
+    cursor_enabled: bool,
     cursor_last_change: Instant,
     vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>,
     last_vsync: Instant,
@@ -141,6 +144,7 @@ impl VDP<'_> {
             background_color: Color::RGB(0, 0, 0),
             graph_color: Color::RGB(255, 255, 255),
             cursor_active: false,
+            cursor_enabled: true,
             cursor_last_change: Instant::now(),
             vsync_counter: vsync_counter,
             last_vsync: Instant::now(),
@@ -172,7 +176,7 @@ impl VDP<'_> {
             if result.is_err() {
                 panic!("Fail!");
             }
-            self.blink_cusor();
+            self.blink_cursor();
             self.canvas.present();
         }
     }
@@ -245,22 +249,20 @@ impl VDP<'_> {
         self.cursor.home();
     }
 
-    fn blink_cusor(&mut self) {
+    
+    fn blink_cursor(&mut self) {
         if self.cursor_last_change.elapsed().as_millis() > 500 {
             self.cursor_active = !self.cursor_active;
             self.cursor_last_change = Instant::now();
         }
-        if self.cursor_active {
+        if self.cursor_active && self.cursor_enabled {
             self.canvas.set_draw_color(self.foreground_color);
-        } else {
-            self.canvas.set_draw_color(self.background_color);
+            let output_size = self.canvas.output_size().unwrap();
+            let scale_x = output_size.0 as f32 / self.current_video_mode.screen_width as f32;
+            let scale_y = output_size.1 as f32 / self.current_video_mode.screen_height as f32;
+            
+            self.canvas.fill_rect(Rect::new((self.cursor.position_x as f32 * scale_x) as i32, (self.cursor.position_y as f32 * scale_y) as i32, 8u32 * scale_x as u32, 8u32 * scale_y as u32));
         }
-
-        let output_size = self.canvas.output_size().unwrap();
-        let scale_x = output_size.0 as f32 / self.current_video_mode.screen_width as f32;
-        let scale_y = output_size.1 as f32 / self.current_video_mode.screen_height as f32;
-
-        self.canvas.fill_rect(Rect::new((self.cursor.position_x as f32 * scale_x) as i32, (self.cursor.position_y as f32 * scale_y) as i32, 8u32 * scale_x as u32, 8u32 * scale_y as u32));
     }
 
 
@@ -312,7 +314,8 @@ impl VDP<'_> {
     fn translate(&self, p: Point) -> Point {
         if self.logical_coords
         {
-            Point::new(p.x+self.graph_origin.x, self.cursor.screen_height - p.y - self.graph_origin.y)
+            Point::new(p.x+self.graph_origin.x,
+                       self.cursor.screen_height - 1 - p.y - self.graph_origin.y)
         }
         else
         {
@@ -341,7 +344,7 @@ impl VDP<'_> {
                         t = t+dy;
                         if (t>0) {
                             t=t-dx;
-                            if (x!=top.x && x!=bot.x && y!=bot.y && y!=top.y) { 
+                            if (y!=bot.y && y!=top.y) { 
                                 xc.push(x);
                             }
                             y=y+1;
@@ -352,7 +355,7 @@ impl VDP<'_> {
                         t = t+dy;
                         if (t>0) {
                             t=t-dx;
-                            if (x!=top.x && x!=bot.x && y!=bot.y && y!=top.y) { 
+                            if (y!=bot.y && y!=top.y) { 
                                 xc.push(x);
                             }
                             y=y+1;
@@ -378,13 +381,7 @@ impl VDP<'_> {
                 }
             }
         }
-        println!("returned list size = {} dy={}",xc.len(),bot.y-top.y);
-        if (xc.len() as i32) < bot.y-top.y+1 {
-            xc.push(bot.x);
-            println!("unexpected coordinate list too short adding one");
-        } else if (xc.len() as i32) > bot.y-top.y+1 {
-            println!("unexpected coordinate list too long");
-        }
+        assert!((xc.len() as i32) == bot.y-top.y+1,"Number of x coordinates does not match y range");
         xc
     }
     
@@ -423,6 +420,9 @@ impl VDP<'_> {
                         (pmid,pbot) = (pbot,pmid);
                     }
                     println!("Points are {},{}  {},{} {},{}",ptop.x,ptop.y,pmid.x,pmid.y,pbot.x,pbot.y);
+                    // Trace the line from top to bottom using Bresenham algo.
+                    // Also trace the lines from top via mid to bottom.
+                    // Draw horizontal lines between them.
                     let xv1 = Self::line_xcoords(ptop, pbot);
                     let mut xv2 = Self::line_xcoords(ptop, pmid);
                     xv2.append((&mut Self::line_xcoords(pmid,pbot)[1..].to_vec()));
@@ -461,10 +461,63 @@ impl VDP<'_> {
         });        
     }    
 
+    fn get_screen_char(&mut self, x: i16, y: i16) -> u8 {
+        let mut c: u8 = 0;
+        if (x >= 0 &&
+            x < (self.cursor.screen_width/self.cursor.font_width) as i16 &&
+            y >= 0 &&
+            y <  (self.cursor.screen_height/self.cursor.font_height) as i16) {
+            self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
+                let rect = Rect::new((x*8) as i32, (y*8) as i32, 8, 8);
+                let v=texture_canvas.read_pixels(rect,PixelFormatEnum::RGB888).unwrap();
+                // Synthesize the character bytes from the read pixels.
+                // NOTE: we only do 8x8 chars for now!
+                let mut bitmap = vec![0 as u8; 8];
+                for cr in 0..8 {
+                    let mut b = 0;
+                    for cc in 0..8 {
+                        let vx = cr*8*4 + cc*4;
+                        let rgb = Color::RGB(v[vx+2],v[vx+1],v[vx+0]);
+                        b<<=1;
+                        if rgb == self.foreground_color {
+                            b |= 1;
+                        }
+                    }
+                    bitmap[cr] = b;
+                }
+                // Find the bitmap in the character data.
+                for i in 0..96 {
+                    let pat = &self.FONT_DATA[i*8..i*8+8];
+                    if *pat == bitmap {
+                        c = i as u8  + 32;
+                        break;
+                    }
+                }
+            });            
+        }
+        c
+    }
+
+    fn get_screen_pixel(&mut self, x: i16, y: i16) -> Color {
+        let p1 = self.translate(self.scale(Point::new(x as i32,y as i32)));
+        let mut rgb = Color::RGB(0,0,0);
+        if (p1.x >=0 && p1.x < self.current_video_mode.screen_width as i32 &&
+            p1.y >=0 && p1.y < self.current_video_mode.screen_height as i32) {
+            self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
+                let rect = Rect::new(p1.x, p1.y, 1, 1);
+                let v=texture_canvas.read_pixels(rect,PixelFormatEnum::RGB888).unwrap();
+                println!("Pixel data = {},{},{},{}",v[0],v[1],v[2],v[3]);
+                rgb.r=v[2]; 
+                rgb.g=v[1]; 
+                rgb.b=v[0]; 
+            });
+        }
+        rgb
+    }
     
     pub fn send_key(&self, keycode: u8, down: bool){
         let mut keyboard_packet: Vec<u8> = vec![keycode, 0, 0, down as u8];
-		self.send_packet(0x1, keyboard_packet.len() as u8, &mut keyboard_packet);
+	self.send_packet(0x1, keyboard_packet.len() as u8, &mut keyboard_packet);
     }
 
     fn send_cursor_position(&self) {
@@ -473,6 +526,17 @@ impl VDP<'_> {
         self.send_packet(0x02, cursor_position_packet.len() as u8, &mut cursor_position_packet);	
     }
 
+    fn send_screen_char(&self, c : u8) {
+        let mut screen_char_packet: Vec<u8> = vec![c];
+        self.send_packet(0x03, screen_char_packet.len() as u8, &mut screen_char_packet);	        
+    }
+
+    fn send_screen_pixel(&self, rgb : Color) {
+        let c = self.current_video_mode.palette.iter().position(|&e| *e==rgb).unwrap() as u8;
+        let mut screen_pixel_packet: Vec<u8> = vec![rgb.r, rgb.g, rgb.b, c];
+        self.send_packet(0x04, screen_pixel_packet.len() as u8, &mut screen_pixel_packet);	        
+    }
+    
     pub fn sdl_scancode_to_mos_keycode(scancode: sdl2::keyboard::Scancode, keymod: sdl2::keyboard::Mod) -> u8{
         match scancode {
             Scancode::Left => 0x08,
@@ -571,8 +635,18 @@ impl VDP<'_> {
                                 println!("Video System Control.");
                                 self.video_system_control();
                             },
-                            0x01 => println!("Cursor Control?"),
-                            0x07 => println!("Scroll?"),
+                            0x01 => {
+                                let b = self.read_byte();
+                                self.cursor_enabled = (b!=0);
+                                println!("Cursor Enable : P{}\n",self.cursor_enabled);
+                            },
+                            0x07 =>  {
+                                let extent = self.read_byte();
+                                let d = self.read_byte();
+                                let m = self.read_byte();
+                                println!("Scroll: full {} dir {} movement {}",extent,d,m);
+                                self.scroll(extent!=0, d, m);    
+                            },
                             0x1B => println!("Sprite Control?"),
                             n if n>=32 => {
                                     for i in 0..8 {
@@ -628,18 +702,50 @@ impl VDP<'_> {
                 println!("VDP_GP.");
                 self.general_poll();
             },
-            0x81 => println!("VDP_KEYCODE?"),
+            0x81 => {
+                println!("Set keyboard layout");
+                self.read_byte();
+            },
             0x82 => {
                 println!("Send Cursor Position");
                 self.send_cursor_position();
             },
+            0x83 => {
+                let x = self.read_word();
+                let y = self.read_word();
+                let c = self.get_screen_char(x,y);
+                println!("Get screen char at {},{} = {}",x,y,c);
+                self.send_screen_char(c);
+            },
+            0x84 => {
+                let x = self.read_word();
+                let y = self.read_word();
+                let rgb = self.get_screen_pixel(x,y);
+                println!("Get screen pixel at {},{}",x,y);
+                self.send_screen_pixel(rgb);
+            },
             0x85 => {
                 println!("VDP_AUDIO");
                 self.audio();
-            }
+            },
             0x86 => {
                 println!("Mode Information");
                 self.send_mode_information();
+            },
+            0x87 => {
+                let m = self.read_byte();
+                if m==0 {
+                    self.send_time();
+                } else {
+                    // Set RTC not implemented.
+                    for _ in 0..6 {
+                        self.read_byte(); // just consume the parameters.
+                    }
+                }
+            },
+            0x88 => {
+                println!("Keyboard State");
+                self.keyboard_state();
             },
             0xC0 => {
                 let b = self.read_byte();
@@ -650,6 +756,45 @@ impl VDP<'_> {
         }
     }
 
+    fn scroll(&mut self, fullscreen: bool, direction: u8, delta: u8) {
+        let mut xsrc : i32 = 0;
+        let mut xdst : i32 = 0;
+        let mut ysrc : i32 = 0;
+        let mut ydst : i32 = 0;
+        let mut xsize : u32 = 0;
+        let mut ysize: u32 = 0;
+        xsize = self.current_video_mode.screen_width;
+        ysize = self.current_video_mode.screen_height;
+        match direction {
+            0 => { // right
+                xsize -= delta as u32;
+                xdst += delta as i32;
+            },
+            1 => { // left
+                xsize -= delta as u32;
+                xsrc += delta as i32;
+            },
+            2 => { // down
+                ysize -= delta as u32;
+                ydst += delta as i32;
+            },
+            3 => { // up
+                ysize -= delta as u32;
+                ysrc += delta as i32;
+            },
+            _ => {}
+        }
+        let mut scrolled_texture = self.texture_creator.create_texture(None, sdl2::render::TextureAccess::Target, self.current_video_mode.screen_width, self.current_video_mode.screen_height).unwrap();
+        self.canvas.with_texture_canvas(&mut scrolled_texture, |texture_canvas| {
+            texture_canvas.set_draw_color(self.background_color);
+            texture_canvas.clear();
+            let rect_src = Rect::new(xsrc, ysrc, xsize, ysize);
+            let rect_dst = Rect::new(xdst, ydst, xsize, ysize);
+            texture_canvas.copy(&self.texture, rect_src, rect_dst);
+        });        
+        self.texture = scrolled_texture;
+    }
+
     fn audio(&mut self) {
         let channel = self.read_byte();
         let waveform = self.read_byte();
@@ -657,6 +802,9 @@ impl VDP<'_> {
         let frequency = self.read_word();
         let duration = self.read_word();
         println!("channel:{} waveform:{} volume:{} frequency:{} duration:{}", channel, waveform, volume, frequency, duration);
+        let res = true;
+        let mut audio_packet: Vec<u8> = vec![channel, res as u8];
+        self.send_packet(0x5, audio_packet.len() as u8, &mut audio_packet);
     }
 
     fn general_poll(&mut self) {
@@ -665,6 +813,14 @@ impl VDP<'_> {
         self.send_packet(0x00, packet.len() as u8, &mut packet);
     }
 
+    fn keyboard_state(&mut self) {
+        let d = self.read_byte();
+        let r = self.read_byte();
+        let b = self.read_byte(); // Just consume those bytes, don't implement.
+        let mut packet: Vec<u8> = vec![0, 0, 0, 0, 0];
+        self.send_packet(0x08, packet.len() as u8, &mut packet);        
+    }
+        
     fn check_scrolling_needed(&mut self) {
         let overdraw = self.cursor.position_y - self.current_video_mode.screen_height as i32 + self.cursor.font_height;
         if overdraw > 0 {
@@ -681,7 +837,7 @@ impl VDP<'_> {
             self.cursor.position_y -= overdraw;
         }
     }
-
+    
     fn send_mode_information(&mut self) {
         println!("Screen width {} Screen height {}", self.cursor.screen_width, self.cursor.screen_height);
         let mut packet: Vec<u8> = vec![
@@ -694,5 +850,22 @@ impl VDP<'_> {
             self.current_video_mode.colors,
          ];
         self.send_packet(0x06, packet.len() as u8, &mut packet);
+    }
+
+    fn send_time(&mut self) {
+        let now: DateTime<Local> = Local::now();
+        println!("Read RTC: {}",now);
+        let yr = now.year(); // year
+        let mo = now.month(); // month 1..12
+        let d = now.day(); // day 1..31
+        let wd = now.weekday().num_days_from_sunday(); // day of week 0=Sun .. 6=Sat
+        let hr = now.hour(); // Hour
+        let mi = now.minute();  // Minute
+        let s = now.second();   // Second
+        let mut packet: Vec<u8> = vec![(yr-1980) as u8, (mo-1) as u8, d as u8,
+                                       0, wd as u8,
+                                       hr as u8, mi as u8, s as u8];
+        self.send_packet(0x07, packet.len() as u8, &mut packet);        
+
     }
 }
