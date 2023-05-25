@@ -637,7 +637,13 @@ impl VDP<'_> {
                                 self.cursor_enabled = (b!=0);
                                 println!("Cursor Enable : P{}\n",self.cursor_enabled);
                             },
-                            0x07 => println!("Scroll?"),
+                            0x07 =>  {
+                                let extent = self.read_byte();
+                                let d = self.read_byte();
+                                let m = self.read_byte();
+                                println!("Scroll: full {} dir {} movement {}",extent,d,m);
+                                self.do_scroll(extent!=0, d, m);    
+                            },
                             0x1B => println!("Sprite Control?"),
                             n if n>=32 => {
                                     for i in 0..8 {
@@ -729,6 +735,45 @@ impl VDP<'_> {
         }
     }
 
+    fn do_scroll(&mut self, fullscreen: bool, direction: u8, delta: u8) {
+        let mut xsrc : i32 = 0;
+        let mut xdst : i32 = 0;
+        let mut ysrc : i32 = 0;
+        let mut ydst : i32 = 0;
+        let mut xsize : u32 = 0;
+        let mut ysize: u32 = 0;
+        xsize = self.current_video_mode.screen_width;
+        ysize = self.current_video_mode.screen_height;
+        match direction {
+            0 => { // right
+                xsize -= delta as u32;
+                xdst += delta as i32;
+            },
+            1 => { // left
+                xsize -= delta as u32;
+                xsrc += delta as i32;
+            },
+            2 => { // down
+                ysize -= delta as u32;
+                ydst += delta as i32;
+            },
+            3 => { // up
+                ysize -= delta as u32;
+                ysrc += delta as i32;
+            },
+            _ => {}
+        }
+        let mut scrolled_texture = self.texture_creator.create_texture(None, sdl2::render::TextureAccess::Target, self.current_video_mode.screen_width, self.current_video_mode.screen_height).unwrap();
+        self.canvas.with_texture_canvas(&mut scrolled_texture, |texture_canvas| {
+            texture_canvas.set_draw_color(self.background_color);
+            texture_canvas.clear();
+            let rect_src = Rect::new(xsrc, ysrc, xsize, ysize);
+            let rect_dst = Rect::new(xdst, ydst, xsize, ysize);
+            texture_canvas.copy(&self.texture, rect_src, rect_dst);
+        });        
+        self.texture = scrolled_texture;
+    }
+
     fn audio(&mut self) {
         let channel = self.read_byte();
         let waveform = self.read_byte();
@@ -760,7 +805,7 @@ impl VDP<'_> {
             self.cursor.position_y -= overdraw;
         }
     }
-
+    
     fn send_mode_information(&mut self) {
         println!("Screen width {} Screen height {}", self.cursor.screen_width, self.cursor.screen_height);
         let mut packet: Vec<u8> = vec![
