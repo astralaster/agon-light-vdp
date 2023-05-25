@@ -459,11 +459,43 @@ impl VDP<'_> {
         });        
     }    
 
-    pub fn get_screen_char(&self, x: i16, y: i16) -> u8 {
-        0
+    fn get_screen_char(&mut self, x: i16, y: i16) -> u8 {
+        let mut c: u8 = 0;
+        if (x >= 0 &&
+            x < (self.cursor.screen_width/self.cursor.font_width) as i16 &&
+            y >= 0 &&
+            y <  (self.cursor.screen_height/self.cursor.font_height) as i16) {
+            self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
+                let rect = Rect::new((x*8) as i32, (y*8) as i32, 8, 8);
+                let v=texture_canvas.read_pixels(rect,PixelFormatEnum::RGB888).unwrap();
+                // Synthesize the character bytes from the read pixels.
+                // NOTE: we only do 8x8 chars for now!
+                let mut bitmap = vec![0 as u8; 8];
+                for cr in 0..8 {
+                    let mut b = 0;
+                    for cc in 0..8 {
+                        let vx = cr*8*4 + cc*4;
+                        let rgb = Color::RGB(v[vx+2],v[vx+1],v[vx+0]);
+                        b<<=1;
+                        if rgb == self.foreground_color {
+                            b |= 1;
+                        }
+                    }
+                    bitmap[cr] = b;
+                }
+                // Find the bitmap in the character data.
+                for i in 0..96 {
+                    let pat = &self.FONT_DATA[i*8..i*8+8];
+                    if *pat == bitmap {
+                        c = i as u8  + 32;
+                    }
+                }
+            });            
+        }
+        c
     }
 
-    pub fn get_screen_pixel(&mut self, x: i16, y: i16) -> Color {
+    fn get_screen_pixel(&mut self, x: i16, y: i16) -> Color {
         let p1 = self.translate(self.scale(Point::new(x as i32,y as i32)));
         let mut rgb = Color::RGB(0,0,0);
         if (p1.x >=0 && p1.x < self.current_video_mode.screen_width as i32 &&
