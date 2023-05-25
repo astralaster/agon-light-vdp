@@ -134,7 +134,7 @@ pub struct VDP<'a> {
 impl VDP<'_> {
     pub fn new(canvas: Canvas<Window>, texture_creator: &TextureCreator<WindowContext>, tx: Sender<u8>, rx: Receiver<u8>, vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>, audio_subsystem: AudioSubsystem) -> Result<VDP, String> {
         let mode =  &VIDEO_MODES[1];
-
+    
         let texture = texture_creator.create_texture(None, sdl2::render::TextureAccess::Target, mode.screen_width, mode.screen_height).unwrap();
      
         Ok(VDP {
@@ -162,12 +162,12 @@ impl VDP<'_> {
             audio_channels: AudioChannels::new(audio_subsystem),
         })
     }
-
+    
     pub fn start(&mut self) {
         self.change_mode(1);
         self.bootscreen();
     }
-
+    
     pub fn run(&mut self) {
         self.do_comms();
         
@@ -175,8 +175,8 @@ impl VDP<'_> {
         if self.last_vsync.elapsed().as_micros() >  (1_000_000u32 / self.current_video_mode.refresh_rate as u32).into() {
             self.vsync_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             self.last_vsync = Instant::now();
-
-
+    
+    
             let result = self.canvas.copy(&self.texture, None, None);
             if result.is_err() {
                 panic!("Fail!");
@@ -186,6 +186,26 @@ impl VDP<'_> {
         }
     }
 
+    pub fn send_key(&self, keycode: u8, down: bool) {
+        let mut keyboard_packet: Vec<u8> = vec![keycode, 0, 0, down as u8];
+	    self.send_packet(0x1, keyboard_packet.len() as u8, &mut keyboard_packet);
+    }
+
+    pub fn sdl_scancode_to_mos_keycode(scancode: sdl2::keyboard::Scancode, keymod: sdl2::keyboard::Mod) -> u8 {
+        match scancode {
+            Scancode::Left => 0x08,
+            Scancode::Tab => 0x09,
+            Scancode::Right => 0x15,
+            Scancode::Down => 0x0A,
+            Scancode::Backspace => 0x7F,
+            Scancode::Return => 0x0D,
+            Scancode::Escape => 0x1B,
+            _ => 0x00,
+        }
+    }
+}
+
+impl VDP<'_> {
     fn change_mode(&mut self, mode: usize) {
         self.current_video_mode = &VIDEO_MODES[mode];
         self.cursor.screen_height = self.current_video_mode.screen_height as i32;
@@ -293,7 +313,7 @@ impl VDP<'_> {
         });
     }
 
-    pub fn color(&mut self, c: u8) {
+    fn color(&mut self, c: u8) {
         if c < 128 {
             self.foreground_color = *self.current_video_mode.palette[c as usize % self.current_video_mode.palette.len()];
         } else {
@@ -301,7 +321,7 @@ impl VDP<'_> {
         }
     }
 
-    pub fn gcolor(&mut self, _m: u8, c: u8) {
+    fn gcolor(&mut self, _m: u8, c: u8) {
         self.graph_color = *self.current_video_mode.palette[c as usize % self.current_video_mode.palette.len()];
     }    
 
@@ -519,11 +539,6 @@ impl VDP<'_> {
         }
         rgb
     }
-    
-    pub fn send_key(&self, keycode: u8, down: bool){
-        let mut keyboard_packet: Vec<u8> = vec![keycode, 0, 0, down as u8];
-	self.send_packet(0x1, keyboard_packet.len() as u8, &mut keyboard_packet);
-    }
 
     fn send_cursor_position(&self) {
         let mut cursor_position_packet: Vec<u8> = vec![(self.cursor.position_x / self.cursor.font_width) as u8,
@@ -540,19 +555,6 @@ impl VDP<'_> {
         let c = self.current_video_mode.palette.iter().position(|&e| *e==rgb).unwrap() as u8;
         let mut screen_pixel_packet: Vec<u8> = vec![rgb.r, rgb.g, rgb.b, c];
         self.send_packet(0x04, screen_pixel_packet.len() as u8, &mut screen_pixel_packet);	        
-    }
-    
-    pub fn sdl_scancode_to_mos_keycode(scancode: sdl2::keyboard::Scancode, keymod: sdl2::keyboard::Mod) -> u8{
-        match scancode {
-            Scancode::Left => 0x08,
-            Scancode::Tab => 0x09,
-            Scancode::Right => 0x15,
-            Scancode::Down => 0x0A,
-            Scancode::Backspace => 0x7F,
-            Scancode::Return => 0x0D,
-            Scancode::Escape => 0x1B,
-            _ => 0x00,
-        }
     }
     
     fn send_packet(&self, code: u8, len: u8, data: &mut Vec<u8>) {
@@ -683,8 +685,7 @@ impl VDP<'_> {
                         let x = self.read_byte() as i32 * self.cursor.font_width;
                         let y = self.read_byte() as i32 * self.cursor.font_height;
                         println!("TAB({},{})",x,y);
-                        if (x < self.cursor.screen_width &&
-                            y < self.cursor.screen_height)
+                        if x < self.cursor.screen_width && y < self.cursor.screen_height
                         {
                             self.cursor.position_x = x;
                             self.cursor.position_y = y;
