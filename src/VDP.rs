@@ -112,6 +112,7 @@ pub struct VDP<'a> {
     background_color: sdl2::pixels::Color,
     graph_color: sdl2::pixels::Color,
     cursor_active: bool,
+    cursor_enabled: bool,
     cursor_last_change: Instant,
     vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>,
     last_vsync: Instant,
@@ -141,6 +142,7 @@ impl VDP<'_> {
             background_color: Color::RGB(0, 0, 0),
             graph_color: Color::RGB(255, 255, 255),
             cursor_active: false,
+            cursor_enabled: true,
             cursor_last_change: Instant::now(),
             vsync_counter: vsync_counter,
             last_vsync: Instant::now(),
@@ -172,7 +174,7 @@ impl VDP<'_> {
             if result.is_err() {
                 panic!("Fail!");
             }
-            self.blink_cusor();
+            self.blink_cursor();
             self.canvas.present();
         }
     }
@@ -245,22 +247,20 @@ impl VDP<'_> {
         self.cursor.home();
     }
 
-    fn blink_cusor(&mut self) {
+    
+    fn blink_cursor(&mut self) {
         if self.cursor_last_change.elapsed().as_millis() > 500 {
             self.cursor_active = !self.cursor_active;
             self.cursor_last_change = Instant::now();
         }
-        if self.cursor_active {
+        if self.cursor_active && self.cursor_enabled {
             self.canvas.set_draw_color(self.foreground_color);
-        } else {
-            self.canvas.set_draw_color(self.background_color);
+            let output_size = self.canvas.output_size().unwrap();
+            let scale_x = output_size.0 as f32 / self.current_video_mode.screen_width as f32;
+            let scale_y = output_size.1 as f32 / self.current_video_mode.screen_height as f32;
+            
+            self.canvas.fill_rect(Rect::new((self.cursor.position_x as f32 * scale_x) as i32, (self.cursor.position_y as f32 * scale_y) as i32, 8u32 * scale_x as u32, 8u32 * scale_y as u32));
         }
-
-        let output_size = self.canvas.output_size().unwrap();
-        let scale_x = output_size.0 as f32 / self.current_video_mode.screen_width as f32;
-        let scale_y = output_size.1 as f32 / self.current_video_mode.screen_height as f32;
-
-        self.canvas.fill_rect(Rect::new((self.cursor.position_x as f32 * scale_x) as i32, (self.cursor.position_y as f32 * scale_y) as i32, 8u32 * scale_x as u32, 8u32 * scale_y as u32));
     }
 
 
@@ -600,7 +600,11 @@ impl VDP<'_> {
                                 println!("Video System Control.");
                                 self.video_system_control();
                             },
-                            0x01 => println!("Cursor Control?"),
+                            0x01 => {
+                                let b = self.read_byte();
+                                self.cursor_enabled = (b!=0);
+                                println!("Cursor Enable : P{}\n",self.cursor_enabled);
+                            },
                             0x07 => println!("Scroll?"),
                             0x1B => println!("Sprite Control?"),
                             n if n>=32 => {
