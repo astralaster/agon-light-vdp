@@ -14,6 +14,9 @@ use sdl2::video::{Window, WindowContext};
 mod font;
 use font::font::FONT_BYTES;
 use chrono::{Local,DateTime,Datelike,Timelike};
+mod audio;
+use audio::audio::AudioChannels;
+use sdl2::AudioSubsystem;
 
 struct Cursor {
     position_x: i32,
@@ -124,11 +127,12 @@ pub struct VDP<'a> {
     p2: Point,
     p3: Point,
     graph_origin: Point,
-    FONT_DATA: Vec<u8>
+    FONT_DATA: Vec<u8>,
+    audio_channels: AudioChannels,
 }
 
 impl VDP<'_> {
-    pub fn new(canvas: Canvas<Window>, texture_creator: &TextureCreator<WindowContext>, tx: Sender<u8>, rx: Receiver<u8>, vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>) -> Result<VDP, String> {
+    pub fn new(canvas: Canvas<Window>, texture_creator: &TextureCreator<WindowContext>, tx: Sender<u8>, rx: Receiver<u8>, vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>, audio_subsystem: AudioSubsystem) -> Result<VDP, String> {
         let mode =  &VIDEO_MODES[1];
 
         let texture = texture_creator.create_texture(None, sdl2::render::TextureAccess::Target, mode.screen_width, mode.screen_height).unwrap();
@@ -155,6 +159,7 @@ impl VDP<'_> {
             p2: Point::new(0,0),
             p3: Point::new(0,0),
             graph_origin: Point::new(0,0),
+            audio_channels: AudioChannels::new(audio_subsystem),
         })
     }
 
@@ -802,7 +807,7 @@ impl VDP<'_> {
         let frequency = self.read_word();
         let duration = self.read_word();
         println!("channel:{} waveform:{} volume:{} frequency:{} duration:{}", channel, waveform, volume, frequency, duration);
-        let res = true;
+        let res = self.audio_channels.start_tone(channel,waveform,volume,frequency,duration);
         let mut audio_packet: Vec<u8> = vec![channel, res as u8];
         self.send_packet(0x5, audio_packet.len() as u8, &mut audio_packet);
     }
