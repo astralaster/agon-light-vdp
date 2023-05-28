@@ -8,7 +8,7 @@ use sdl2::keyboard::{self, Mod, Scancode};
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::rect::{Point, Rect};
-use sdl2::render::{Canvas, SurfaceCanvas, Texture, TextureCreator};
+use sdl2::render::{Canvas, SurfaceCanvas, Texture, TextureCreator,BlendMode};
 use sdl2::surface::Surface;
 use sdl2::video::{Window, WindowContext};
 mod font;
@@ -70,6 +70,15 @@ impl Cursor {
     }
 }
 
+struct Sprite
+{
+    frames: Vec<u8>,
+    current_frame: u8,
+    pos_x: i16,
+    pos_y: i16,
+    visible: bool,
+}
+
 static COLOUR_LOOKUP: [sdl2::pixels::Color; 64] = [
 	Color::RGB(0x00, 0x00, 0x00), Color::RGB(0x00, 0x00, 0x55), Color::RGB(0x00, 0x00, 0xAA), Color::RGB(0x00, 0x00, 0xFF),
 	Color::RGB(0x00, 0x55, 0x00), Color::RGB(0x00, 0x55, 0x55), Color::RGB(0x00, 0x55, 0xAA), Color::RGB(0x00, 0x55, 0xFF),
@@ -129,6 +138,11 @@ pub struct VDP<'a> {
     graph_origin: Point,
     FONT_DATA: Vec<u8>,
     audio_channels: AudioChannels,
+    num_sprites: u8,
+    current_sprite: u8,
+    current_bitmap: u8,
+    bitmaps: Vec<Option<Texture<'a>>>,
+    sprites: Vec<Sprite>,
 }
 
 impl VDP<'_> {
@@ -137,7 +151,8 @@ impl VDP<'_> {
     
         let texture = texture_creator.create_texture(None, sdl2::render::TextureAccess::Target, mode.screen_width, mode.screen_height).unwrap();
      
-        Ok(VDP {
+        Ok({
+            let mut v=VDP {
             cursor: Cursor::new(mode.screen_width as i32, mode.screen_height as i32, 8, 8),
             canvas: canvas,
             texture: texture,
@@ -160,7 +175,21 @@ impl VDP<'_> {
             p3: Point::new(0,0),
             graph_origin: Point::new(0,0),
             audio_channels: AudioChannels::new(audio_subsystem),
-        })
+            num_sprites: 0,
+            current_sprite: 0,
+            current_bitmap: 0,
+            bitmaps: Vec::new(),
+            sprites: Vec::new(),
+            };
+            for _ in 0..256 {
+                v.bitmaps.push(None);
+            };
+            for _ in 0..255 {
+                v.sprites.push(Sprite{frames: Vec::new(), current_frame: 0,
+                                      pos_x: 0, pos_y: 0, visible: false});
+            }
+            v}
+        )        
     }
     
     pub fn start(&mut self) {
@@ -181,7 +210,9 @@ impl VDP<'_> {
             if result.is_err() {
                 panic!("Fail!");
             }
+            self.canvas.set_blend_mode(BlendMode::Blend);
             self.blink_cursor();
+            self.show_sprites();
             self.canvas.present();
         }
     }
@@ -197,6 +228,7 @@ impl VDP<'_> {
             Scancode::Tab => 0x09,
             Scancode::Right => 0x15,
             Scancode::Down => 0x0A,
+            Scancode::Up => 0x0B,
             Scancode::Backspace => 0x7F,
             Scancode::Return => 0x0D,
             Scancode::Escape => 0x1B,
@@ -302,6 +334,7 @@ impl VDP<'_> {
             texture_canvas.set_draw_color(self.background_color);
             texture_canvas.clear();
         });
+        self.clear_sprites();
         self.cursor.position_x = 0;
         self.cursor.position_y = 0;
     }
@@ -580,6 +613,12 @@ impl VDP<'_> {
         i16::from_le_bytes([self.rx.recv().unwrap(), self.rx.recv().unwrap()])
     } 
 
+    fn read_long(&mut self) -> Color {
+        let b = [self.rx.recv().unwrap(), self.rx.recv().unwrap(),
+             self.rx.recv().unwrap(), self.rx.recv().unwrap()];
+        Color::RGBA(b[0],b[1],b[2],b[3])
+    } 
+
     fn do_comms(&mut self) {
         match self.try_read_byte() {
             Ok(n) => {
@@ -654,7 +693,10 @@ impl VDP<'_> {
                                 println!("Scroll: full {} dir {} movement {}",extent,d,m);
                                 self.scroll(extent!=0, d, m);    
                             },
-                            0x1B => println!("Sprite Control?"),
+                            0x1B => {
+                                println!("Sprite Control");
+                                self.do_sprites();
+                            },
                             n if n>=32 => {
                                     for i in 0..8 {
                                         let b =  self.read_byte();
@@ -873,5 +915,210 @@ impl VDP<'_> {
                                        hr as u8, mi as u8, s as u8];
         self.send_packet(0x07, packet.len() as u8, &mut packet);        
 
+    }
+
+    fn do_sprites(&mut self) {
+        let cmd = self.read_byte();
+        match cmd {
+            0 => {
+                let b = self.read_byte();
+                println!("Select bitmap {b}");
+                self.current_bitmap = b;
+            },
+            1 => {
+                let w = self.read_word() as i32;
+                let h = self.read_word() as i32;
+                println!("Read bitmap {} w={} h={}", self.current_bitmap,w,h);
+                if (w > 0 && h > 0) {
+                    let mut tex =
+                        self.texture_creator.create_texture(None, sdl2::render::TextureAccess::Target,w as u32,h  as u32).unwrap();
+                    for y in 0..h {
+                        for x in 0..w {
+                            let c1 = self.read_long();
+                            let c=self.color_quantize(c1);
+                            self.canvas.with_texture_canvas(&mut tex, |texture_canvas| {
+                                texture_canvas.set_blend_mode(BlendMode::None);
+                                texture_canvas.set_draw_color(c);
+                                texture_canvas.draw_point(Point::new(x,y));
+                            });
+                        }
+                    }
+                    self.bitmaps[self.current_bitmap as usize ] = Some(tex);
+                }
+            },
+            2 => {
+                let w = self.read_word() as i32;
+                let h = self.read_word() as i32;
+                println!("Read bitmap {} w={} h={} one colour", self.current_bitmap,w,h);
+                if (w > 0 && h > 0) {
+                    let mut tex =
+                        self.texture_creator.create_texture(None, sdl2::render::TextureAccess::Target,w as u32,h  as u32).unwrap();
+                    let c1 = self.read_long();
+                    let c=self.color_quantize(c1);
+                    for y in 0..h {
+                        for x in 0..w {
+                            self.canvas.with_texture_canvas(&mut tex, |texture_canvas| {
+                                texture_canvas.set_blend_mode(BlendMode::None);
+                                texture_canvas.set_draw_color(c);
+                                texture_canvas.draw_point(Point::new(x,y));
+                            });
+                        }
+                    }
+                    self.bitmaps[self.current_bitmap as usize ] = Some(tex);
+                }                
+            },
+            3 => {
+                let x=self.read_word();
+                let y=self.read_word();
+                println!("Draw bitmap {} at {},{}",self.current_bitmap,x,y);
+                match &self.bitmaps[self.current_bitmap as usize] {
+                    None => {println!("Undefined bitmap");},
+                    Some(bm) => { 
+                        let q = bm.query();
+                        let sx = q.width;
+                        let sy = q.height;
+                        self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
+                            texture_canvas.copy(&bm,
+                                                None,
+                                                Some(Rect::new(x as i32,y as i32,sx,sy)));
+                        });
+                    },
+                }
+            },
+            4 => {
+                let b = self.read_byte();
+                println!("Select sprite {b}");
+                self.current_sprite = b;
+            },
+            5 => {
+                println!("Clear frames of sprite {}", self.current_sprite);
+                self.sprites[self.current_sprite as usize].frames = Vec::new();
+                self.sprites[self.current_sprite as usize].current_frame = 0;
+                self.sprites[self.current_sprite as usize].visible = false;
+            },
+            6 => {
+                let n = self.read_byte();
+                println!("Add bitmap {} as frame to sprite {}",n,self.current_sprite);
+                match &self.bitmaps[n as usize] {
+                    None => {println!("No bitmap defined!");},
+                    Some(_) => {self.sprites[self.current_sprite as usize].frames.push(n);} 
+                }
+            },
+            7 => {
+                let b = self.read_byte();
+                println!("Make {} sprites active",b);
+                self.num_sprites=b;
+            },
+            8 => {
+                println!("Next frame on sprite {}",self.current_sprite);                
+                let nf = self.sprites[self.current_sprite as usize].frames.len();
+                let mut f = self.sprites[self.current_sprite as usize].current_frame as usize;
+                if f==nf-1 {
+                    f=0;
+                } else {
+                    f=f+1;
+                }
+                self.sprites[self.current_sprite as usize].current_frame=f as u8;    
+            },
+            9 => {
+                println!("Previous frame on sprite {}",self.current_sprite);                
+                let nf = self.sprites[self.current_sprite as usize].frames.len();
+                let mut f = self.sprites[self.current_sprite as usize].current_frame as usize;
+                if f==0 {
+                    f=nf-1;
+                } else {
+                    f=f-1;
+                }
+                self.sprites[self.current_sprite as usize].current_frame=f as u8;    
+                
+            },
+            10 => {
+                let b = self.read_byte() as usize;
+                let nf = self.sprites[self.current_sprite as usize].frames.len();
+                println!("Set frame {} on sprite {}",b,self.current_sprite);
+                if b<nf {
+                    self.sprites[self.current_sprite as usize].current_frame=b as u8;
+                } else {
+                    println!("Frame out of range");
+                }
+            },
+            11 => {
+                println!("Show sprite {}",self.current_sprite);
+                if (self.sprites[self.current_sprite as usize].frames.len() > 0) {
+                    self.sprites[self.current_sprite as usize].visible = true;
+                }
+                else
+                {
+                    println!("Try to show a sprite with no frames");
+                }                
+            },
+            12 => {
+                println!("Hide sprite {}",self.current_sprite);
+                self.sprites[self.current_sprite as usize].visible = false; 
+            },
+            13 => {
+                let x=self.read_word();
+                let y=self.read_word();
+                println!("Mov sprite {} to {},{}",self.current_sprite,x,y);
+                self.sprites[self.current_sprite as usize].pos_x = x;
+                self.sprites[self.current_sprite as usize].pos_y = y;
+            },
+            14 => {
+                let x=self.read_word();
+                let y=self.read_word();
+                println!("Mov sprite {} by {},{}",self.current_sprite,x,y);
+                self.sprites[self.current_sprite as usize].pos_x += x;
+                self.sprites[self.current_sprite as usize].pos_y += y;
+            },
+            15 => {
+                // for now a no-op. We will refresh them anyway.
+                println!("Refresh sprites!");
+            },
+            16 => {
+                // Reset sprit system.
+                println!("Reset sprite system");
+                self.cls();
+                for bm in self.bitmaps.iter_mut() {
+                    *bm=None;
+                }
+                self.current_bitmap = 0;
+                self.current_sprite = 0;
+            },
+            _ => {println!("Unsupported Sprite Command {cmd}");}    
+        }
+    }
+
+    fn clear_sprites(&mut self) {
+        self.num_sprites = 0;
+        for s in self.sprites.iter_mut() {
+            s.frames = Vec::new();
+            s.current_frame = 0;
+            s.visible = false;
+        }
+    }
+
+    fn show_sprites(&mut self) {
+        let output_size = self.canvas.output_size().unwrap();
+        let scale_x = output_size.0 as f32 / self.current_video_mode.screen_width as f32;
+        let scale_y = output_size.1 as f32 / self.current_video_mode.screen_height as f32;
+        for s in self.sprites.iter() {
+            if s.visible {
+                let bm = self.bitmaps[s.frames[s.current_frame as usize] as usize].as_ref().unwrap();
+                let q = bm.query();
+                let sx=q.width;
+                let sy=q.height;
+                self.canvas.copy(bm, None,
+                                 Rect::new((s.pos_x as f32 * scale_x) as i32, (s.pos_y as f32 * scale_y) as i32, sx * scale_x as u32, sy * scale_y as u32)                                 
+                );
+            }
+        }
+    }
+    
+    fn color_quantize(&mut self,c: sdl2::pixels::Color) -> sdl2::pixels::Color {
+        if (c.a > 0) {
+            Color::RGBA((c.r/64)*85, (c.g/64)*85, (c.b/64)*85, 255)
+        } else {
+            Color::RGBA(0, 0, 0, 0)
+        }          
     }
 }
