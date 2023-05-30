@@ -1,11 +1,8 @@
 use core::panic;
 use std::sync::mpsc::{Sender, Receiver, TryRecvError};
-use std::time::{Instant, Duration};
+use std::time::{Instant};
 
-use sdl2::Sdl;
-use sdl2::event::Event;
-use sdl2::keyboard::{self, Mod, Scancode};
-use sdl2::keyboard::Keycode;
+use sdl2::keyboard::{Mod, Scancode};
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::rect::{Point, Rect};
 use sdl2::render::{Canvas, SurfaceCanvas, Texture, TextureCreator,BlendMode};
