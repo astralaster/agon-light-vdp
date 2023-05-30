@@ -236,20 +236,6 @@ impl VDP<'_> {
         let mut keyboard_packet: Vec<u8> = vec![ascii, modifiers, fabgl_vk as u8, down as u8];
 	    self.send_packet(0x1, keyboard_packet.len() as u8, &mut keyboard_packet);
     }
-
-    pub fn sdl_scancode_to_mos_keycode(scancode: sdl2::keyboard::Scancode, keymod: sdl2::keyboard::Mod) -> u8 {
-        match scancode {
-            Scancode::Left => 0x08,
-            Scancode::Tab => 0x09,
-            Scancode::Right => 0x15,
-            Scancode::Down => 0x0A,
-            Scancode::Up => 0x0B,
-            Scancode::Backspace => 0x7F,
-            Scancode::Return => 0x0D,
-            Scancode::Escape => 0x1B,
-            _ => 0x00,
-        }
-    }
 }
 
 impl VDP<'_> {
