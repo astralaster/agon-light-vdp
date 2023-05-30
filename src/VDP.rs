@@ -30,10 +30,10 @@ impl Cursor {
         Cursor {
             position_x: 0,
             position_y: 0,
-            screen_width: screen_width,
-            screen_height: screen_height,
-            font_width: font_width,
-            font_height: font_height
+            screen_width,
+            screen_height,
+            font_width,
+            font_height
         }
     }
 
