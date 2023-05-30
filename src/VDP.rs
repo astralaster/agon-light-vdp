@@ -220,7 +220,11 @@ impl VDP<'_> {
 
     pub fn send_key(&self, scancode: Scancode, keymod: Mod, down: bool) {
         let fabgl_vk = keymap::keymap::sdl_scancode_to_fbgl_virtual_key(scancode, keymod);
-        let ascii = keymap::keymap::fabgl_virtual_key_to_ascii(&fabgl_vk);
+        let mut ascii = keymap::keymap::fabgl_virtual_key_to_ascii(&fabgl_vk);
+
+        if keymod.contains(Mod::LCTRLMOD) || keymod.contains(Mod::RCTRLMOD) {
+            ascii = ascii & 0x1F;
+        }
 
         let mut modifiers: u8 = 0;
         if keymod.contains(Mod::LCTRLMOD) || keymod.contains(Mod::RCTRLMOD)   { modifiers |= 0b00000001; }
