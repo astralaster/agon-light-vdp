@@ -262,7 +262,7 @@ impl VDP<'_> {
         let mut y = 0;
         for byte in bytes.iter()
         {
-            for bit in 0..7
+            for bit in 0..8
             {
                 if byte & (1 << bit) != 0
                 {
