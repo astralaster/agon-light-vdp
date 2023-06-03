@@ -134,17 +134,18 @@ pub struct VDP<'a> {
     p2: Point,
     p3: Point,
     graph_origin: Point,
-    FONT_DATA: Vec<u8>,
+    font_data: Vec<u8>,
     audio_channels: AudioChannels,
     num_sprites: u8,
     current_sprite: u8,
     current_bitmap: u8,
     bitmaps: Vec<Option<Texture<'a>>>,
     sprites: Vec<Sprite>,
+    scale_window: u8,
 }
 
 impl VDP<'_> {
-    pub fn new(canvas: Canvas<Window>, texture_creator: &TextureCreator<WindowContext>, tx: Sender<u8>, rx: Receiver<u8>, vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>, audio_subsystem: AudioSubsystem) -> Result<VDP, String> {
+    pub fn new(canvas: Canvas<Window>, texture_creator: &TextureCreator<WindowContext>, scale_window: u8, tx: Sender<u8>, rx: Receiver<u8>, vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>, audio_subsystem: AudioSubsystem) -> Result<VDP, String> {
         let mode =  &VIDEO_MODES[1];
     
         let texture = texture_creator.create_texture(None, sdl2::render::TextureAccess::Target, mode.screen_width, mode.screen_height).unwrap();
@@ -152,21 +153,21 @@ impl VDP<'_> {
         Ok({
             let mut v=VDP {
             cursor: Cursor::new(mode.screen_width as i32, mode.screen_height as i32, 8, 8),
-            canvas: canvas,
-            texture: texture,
-            texture_creator: texture_creator,
-            tx: tx,
-            rx: rx,
+            canvas,
+            texture,
+            texture_creator,
+            tx,
+            rx,
             foreground_color: Color::RGB(255, 255, 255),
             background_color: Color::RGB(0, 0, 0),
             graph_color: Color::RGB(255, 255, 255),
             cursor_active: false,
             cursor_enabled: true,
             cursor_last_change: Instant::now(),
-            vsync_counter: vsync_counter,
+            vsync_counter,
             last_vsync: Instant::now(),
             current_video_mode: mode,
-            FONT_DATA: FONT_BYTES.to_vec(),
+            font_data: FONT_BYTES.to_vec(),
             logical_coords: true,
             p1: Point::new(0,0),
             p2: Point::new(0,0),
@@ -178,6 +179,7 @@ impl VDP<'_> {
             current_bitmap: 0,
             bitmaps: Vec::new(),
             sprites: Vec::new(),
+            scale_window,
             };
             for _ in 0..256 {
                 v.bitmaps.push(None);
@@ -186,7 +188,8 @@ impl VDP<'_> {
                 v.sprites.push(Sprite{frames: Vec::new(), current_frame: 0,
                                       pos_x: 0, pos_y: 0, visible: false});
             }
-            v}
+            v
+        }
         )        
     }
     
@@ -243,7 +246,7 @@ impl VDP<'_> {
         self.current_video_mode = &VIDEO_MODES[mode];
         self.cursor.screen_height = self.current_video_mode.screen_height as i32;
         self.cursor.screen_width = self.current_video_mode.screen_width as i32;
-        self.canvas.window_mut().set_size(self.current_video_mode.screen_width, self.current_video_mode.screen_height);
+        self.canvas.window_mut().set_size(self.current_video_mode.screen_width * self.scale_window as u32, self.current_video_mode.screen_height * self.scale_window as u32).unwrap();
         self.texture = self.texture_creator.create_texture(None, sdl2::render::TextureAccess::Target, self.current_video_mode.screen_width, self.current_video_mode.screen_height).unwrap();
         self.cls();
         self.p1.x = 0;
@@ -281,7 +284,7 @@ impl VDP<'_> {
             let shifted_ascii = ascii - 32;
             let start = (8 * shifted_ascii as u32) as usize;
             let end = start+8 as usize;
-            let mut points = Self::get_points_from_font(self.FONT_DATA[start..end].to_vec());
+            let mut points = Self::get_points_from_font(self.font_data[start..end].to_vec());
             
             for point in points.iter_mut() {
                 point.x += self.cursor.position_x;
@@ -546,7 +549,7 @@ impl VDP<'_> {
                 }
                 // Find the bitmap in the character data.
                 for i in 0..96 {
-                    let pat = &self.FONT_DATA[i*8..i*8+8];
+                    let pat = &self.font_data[i*8..i*8+8];
                     if *pat == bitmap {
                         c = i as u8  + 32;
                         break;
@@ -701,7 +704,7 @@ impl VDP<'_> {
                             n if n>=32 => {
                                     for i in 0..8 {
                                         let b =  self.read_byte();
-                                        self.FONT_DATA[((n-32)as u32*8+i) as usize] = b;
+                                        self.font_data[((n-32)as u32*8+i) as usize] = b;
                                     }
                                     println!("Redefine char bitmap: {}.", n);
                                 },
@@ -1076,7 +1079,7 @@ impl VDP<'_> {
                 println!("Refresh sprites!");
             },
             16 => {
-                // Reset sprit system.
+                // Reset sprite system.
                 println!("Reset sprite system");
                 self.cls();
                 for bm in self.bitmaps.iter_mut() {
