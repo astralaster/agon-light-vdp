@@ -322,7 +322,7 @@ impl VDP<'_> {
             let scale_x = output_size.0 as f32 / self.current_video_mode.screen_width as f32;
             let scale_y = output_size.1 as f32 / self.current_video_mode.screen_height as f32;
             
-            self.canvas.fill_rect(Rect::new((self.cursor.position_x as f32 * scale_x) as i32, (self.cursor.position_y as f32 * scale_y) as i32, 8u32 * scale_x as u32, 8u32 * scale_y as u32));
+            self.canvas.fill_rect(Rect::new((self.cursor.position_x as f32 * scale_x) as i32, (self.cursor.position_y as f32 * scale_y) as i32, (8f32 * scale_x) as u32, (8f32 * scale_y) as u32));
         }
     }
 
