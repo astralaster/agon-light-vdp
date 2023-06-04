@@ -10,6 +10,8 @@ use sdl2::surface::Surface;
 use sdl2::video::{Window, WindowContext};
 mod font;
 use font::font::FONT_BYTES;
+mod font_8x19;
+use font_8x19::font_8x19::FONT_8x19_BYTES;
 use chrono::{Local,DateTime,Datelike,Timelike};
 mod audio;
 use audio::audio::AudioChannels;
@@ -130,6 +132,9 @@ pub struct VDP<'a> {
     last_vsync: Instant,
     current_video_mode: &'static VideoMode,
     logical_coords: bool,
+    terminal_mode: bool,
+    terminal_underline: bool,
+    terminal_reverse: bool,
     p1: Point,
     p2: Point,
     p3: Point,
@@ -169,6 +174,9 @@ impl VDP<'_> {
             current_video_mode: mode,
             font_data: FONT_BYTES.to_vec(),
             logical_coords: true,
+            terminal_mode: false,
+            terminal_reverse: false,
+            terminal_underline: false,
             p1: Point::new(0,0),
             p2: Point::new(0,0),
             p3: Point::new(0,0),
@@ -225,19 +233,24 @@ impl VDP<'_> {
         if keymod.contains(Mod::LCTRLMOD) || keymod.contains(Mod::RCTRLMOD) {
             ascii = ascii & 0x1F;
         }
-
-        let mut modifiers: u8 = 0;
-        if keymod.contains(Mod::LCTRLMOD) || keymod.contains(Mod::RCTRLMOD)   { modifiers |= 0b00000001; }
-        if keymod.contains(Mod::LSHIFTMOD) || keymod.contains(Mod::RSHIFTMOD) { modifiers |= 0b00000010; }
-        if keymod.contains(Mod::LALTMOD)                                      { modifiers |= 0b00000100; }
-        if keymod.contains(Mod::RALTMOD)                                      { modifiers |= 0b00001000; }
-        if keymod.contains(Mod::CAPSMOD)                                      { modifiers |= 0b00010000; }
-        if keymod.contains(Mod::NUMMOD)                                       { modifiers |= 0b00100000; }
+        if (self.terminal_mode) {
+            //TODO handle cursor keys.
+            if down {
+                self.tx.send(ascii);
+            }
+        } else {
+            let mut modifiers: u8 = 0;
+            if keymod.contains(Mod::LCTRLMOD) || keymod.contains(Mod::RCTRLMOD)   { modifiers |= 0b00000001; }
+            if keymod.contains(Mod::LSHIFTMOD) || keymod.contains(Mod::RSHIFTMOD) { modifiers |= 0b00000010; }
+            if keymod.contains(Mod::LALTMOD)                                      { modifiers |= 0b00000100; }
+            if keymod.contains(Mod::RALTMOD)                                      { modifiers |= 0b00001000; }
+            if keymod.contains(Mod::CAPSMOD)                                      { modifiers |= 0b00010000; }
+            if keymod.contains(Mod::NUMMOD)                                       { modifiers |= 0b00100000; }
         // SCROLLLOCK is not supported by SDL2
-        if keymod.contains(Mod::LGUIMOD) || keymod.contains(Mod::RGUIMOD)     { modifiers |= 0b10000000; }
-
-        let mut keyboard_packet: Vec<u8> = vec![ascii, modifiers, fabgl_vk as u8, down as u8];
+            if keymod.contains(Mod::LGUIMOD) || keymod.contains(Mod::RGUIMOD)     { modifiers |= 0b10000000; }
+            let mut keyboard_packet: Vec<u8> = vec![ascii, modifiers, fabgl_vk as u8, down as u8];
 	    self.send_packet(0x1, keyboard_packet.len() as u8, &mut keyboard_packet);
+        }
     }
 }
 
@@ -259,15 +272,16 @@ impl VDP<'_> {
         self.graph_origin.y = 0;
     }
     
-    fn get_points_from_font(bytes : Vec<u8>) -> Vec<Point>
+    fn get_points_from_font(bytes : Vec<u8>, underline: bool) -> Vec<Point>
     {
         let mut points: Vec<Point> = Vec::new();
         let mut y = 0;
         for byte in bytes.iter()
         {
+            let b1 = if underline && y==(bytes.len() as i32 - 1) {0xffu8} else {*byte};
             for bit in 0..8
             {
-                if byte & (1 << bit) != 0
+                if b1 & (1 << bit) != 0
                 {
                     points.push(Point::new(7 - bit, y));
                 }
@@ -282,9 +296,9 @@ impl VDP<'_> {
         //println!("Render {:#02X?}", ascii);
         if ascii >= 32 {
             let shifted_ascii = ascii - 32;
-            let start = (8 * shifted_ascii as u32) as usize;
-            let end = start+8 as usize;
-            let mut points = Self::get_points_from_font(self.font_data[start..end].to_vec());
+            let start = (self.cursor.font_height * (shifted_ascii as i32)) as usize;
+            let end = start+self.cursor.font_height as usize;
+            let mut points = Self::get_points_from_font(self.font_data[start..end].to_vec(),self.terminal_underline);
             
             for point in points.iter_mut() {
                 point.x += self.cursor.position_x;
@@ -292,9 +306,9 @@ impl VDP<'_> {
             }
 
             self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
-                texture_canvas.set_draw_color(self.background_color);
-                texture_canvas.fill_rect(Rect::new(self.cursor.position_x, self.cursor.position_y, 8, 8));
-                texture_canvas.set_draw_color(self.foreground_color);
+                texture_canvas.set_draw_color(if self.terminal_reverse {self.foreground_color} else {self.background_color});
+                texture_canvas.fill_rect(Rect::new(self.cursor.position_x, self.cursor.position_y, 8, self.cursor.font_height as u32));
+                texture_canvas.set_draw_color(if self.terminal_reverse {self.background_color} else {self.foreground_color});
                 texture_canvas.draw_points(&points[..]);
             });
         }
@@ -322,7 +336,7 @@ impl VDP<'_> {
             let scale_x = output_size.0 as f32 / self.current_video_mode.screen_width as f32;
             let scale_y = output_size.1 as f32 / self.current_video_mode.screen_height as f32;
             
-            self.canvas.fill_rect(Rect::new((self.cursor.position_x as f32 * scale_x) as i32, (self.cursor.position_y as f32 * scale_y) as i32, (8f32 * scale_x) as u32, (8f32 * scale_y) as u32));
+            self.canvas.fill_rect(Rect::new((self.cursor.position_x as f32 * scale_x) as i32, (self.cursor.position_y as f32 * scale_y) as i32, (8f32 * scale_x) as u32, (self.cursor.font_height as f32 * scale_y) as u32));
         }
     }
 
@@ -626,122 +640,126 @@ impl VDP<'_> {
     fn do_comms(&mut self) {
         match self.try_read_byte() {
             Ok(n) => {
-                match n {
-                    n if n >= 0x20 && n != 0x7F => {
-                        println!("Received character: {}", n as char);
-                        self.render_char(n);
-                        self.cursor.right();
-                        self.check_scrolling_needed();
-                    },
-                    0x08 => {println!("Cursor left."); self.cursor.left();},
-                    0x09 => {println!("Cursor right."); self.cursor.right();},
-                    0x0A => {
-                        println!("Cursor down.");
-                        self.cursor.down();
-                        self.check_scrolling_needed();
-                    },
-                    0x0B => {println!("Cursor up."); self.cursor.up();},
-                    0x0C => {
-                        println!("CLS.");
-                        self.cls();
-                    },
-                    0x0D => {println!("Cursor home."); self.cursor.home();},
-                    0x0E => {println!("PageMode ON?");},
-                    0x0F => {println!("PageMode OFF?");},
-                    0x10 => {
-                        println!("CLG");
-                        self.clg();
-                    },
-                    0x11 => {
-                        let c = self.read_byte();
-                        println!("COLOUR {}",c);
-                        self.color(c);
-
-                    },
-                    0x12 => {
-                        let m = self.read_byte();
-                        let c = self.read_byte();
-                        println!("GCOL {},{}",m,c);
-                        self.gcolor(m,c);
-                    },
-                    0x13 => {
-                        let l = self.read_byte();
-                        let p = self.read_byte();
-                        let r = self.read_byte();
-                        let g = self.read_byte();
-                        let b = self.read_byte();
-                        println!("Define Logical Colour?: l:{} p:{} r:{} g:{} b:{}", l, p, r, g, b);
-                    },
-                    0x16 => {
-                        println!("MODE.");
-                        let mode = self.read_byte();
-                        self.change_mode(mode.into());
-                        self.send_mode_information();
-                    },
-                    0x17 => {
-                        println!("VDU23.");
-                        match self.read_byte() {
-                            0x00 => {
-                                println!("Video System Control.");
-                                self.video_system_control();
-                            },
-                            0x01 => {
-                                let b = self.read_byte();
-                                self.cursor_enabled = (b!=0);
-                                println!("Cursor Enable : P{}\n",self.cursor_enabled);
-                            },
-                            0x07 =>  {
-                                let extent = self.read_byte();
-                                let d = self.read_byte();
-                                let m = self.read_byte();
-                                println!("Scroll: full {} dir {} movement {}",extent,d,m);
-                                self.scroll(extent!=0, d, m);    
-                            },
-                            0x1B => {
-                                println!("Sprite Control");
-                                self.do_sprites();
-                            },
-                            n if n>=32 => {
+                if self.terminal_mode {
+                    self.print_terminal(n);
+                } else {    
+                    match n {
+                        n if n >= 0x20 && n != 0x7F => {
+                            println!("Received character: {}", n as char);
+                            self.render_char(n);
+                            self.cursor.right();
+                            self.check_scrolling_needed();
+                        },
+                        0x08 => {println!("Cursor left."); self.cursor.left();},
+                        0x09 => {println!("Cursor right."); self.cursor.right();},
+                        0x0A => {
+                            println!("Cursor down.");
+                            self.cursor.down();
+                            self.check_scrolling_needed();
+                        },
+                        0x0B => {println!("Cursor up."); self.cursor.up();},
+                        0x0C => {
+                            println!("CLS.");
+                            self.cls();
+                        },
+                        0x0D => {println!("Cursor home."); self.cursor.home();},
+                        0x0E => {println!("PageMode ON?");},
+                        0x0F => {println!("PageMode OFF?");},
+                        0x10 => {
+                            println!("CLG");
+                            self.clg();
+                        },
+                        0x11 => {
+                            let c = self.read_byte();
+                            println!("COLOUR {}",c);
+                            self.color(c);
+                            
+                        },
+                        0x12 => {
+                            let m = self.read_byte();
+                            let c = self.read_byte();
+                            println!("GCOL {},{}",m,c);
+                            self.gcolor(m,c);
+                        },
+                        0x13 => {
+                            let l = self.read_byte();
+                            let p = self.read_byte();
+                            let r = self.read_byte();
+                            let g = self.read_byte();
+                            let b = self.read_byte();
+                            println!("Define Logical Colour?: l:{} p:{} r:{} g:{} b:{}", l, p, r, g, b);
+                        },
+                        0x16 => {
+                            println!("MODE.");
+                            let mode = self.read_byte();
+                            self.change_mode(mode.into());
+                            self.send_mode_information();
+                        },
+                        0x17 => {
+                            println!("VDU23.");
+                            match self.read_byte() {
+                                0x00 => {
+                                    println!("Video System Control.");
+                                    self.video_system_control();
+                                },
+                                0x01 => {
+                                    let b = self.read_byte();
+                                    self.cursor_enabled = (b!=0);
+                                    println!("Cursor Enable : P{}\n",self.cursor_enabled);
+                                },
+                                0x07 =>  {
+                                    let extent = self.read_byte();
+                                    let d = self.read_byte();
+                                    let m = self.read_byte();
+                                    println!("Scroll: full {} dir {} movement {}",extent,d,m);
+                                    self.scroll(extent!=0, d, m);    
+                                },
+                                0x1B => {
+                                    println!("Sprite Control");
+                                    self.do_sprites();
+                                },
+                                n if n>=32 => {
                                     for i in 0..8 {
                                         let b =  self.read_byte();
                                         self.font_data[((n-32)as u32*8+i) as usize] = b;
                                     }
                                     println!("Redefine char bitmap: {}.", n);
                                 },
-                            n => { println!("Unknown VDU command: {:#02X?}.", n);}
-                        }
-                    },
-                    0x19 => {
-                        let mode = self.read_byte();
-                        let x = self.read_word();
-                        let y = self.read_word();
-                        println!("PLOT {},{},{}",mode,x,y);
-                        self.plot(mode,x,y);
-                    },
-                    0x1D => {
-                        let x = self.read_word() as i32;
-                        let y = self.read_word() as i32;
-                        if x>= 0 && y>= 0 {
-                            self.graph_origin=self.scale(Point::new(x,y));
-                        }
-                        println!("Graph origin {},{}",x,y);
-                    },
-                    0x1E => {println!("Home."); self.cursor.home();},
-                    0x1F => {
-                        let x = self.read_byte() as i32 * self.cursor.font_width;
-                        let y = self.read_byte() as i32 * self.cursor.font_height;
-                        println!("TAB({},{})",x,y);
-                        if x < self.cursor.screen_width && y < self.cursor.screen_height
-                        {
-                            self.cursor.position_x = x;
-                            self.cursor.position_y = y;
-                        }
-                    },
-                    0x7F => {
-                        println!("BACKSPACE.");
-                        self.backspace();
-                    },
-                    n => println!("Unknown Command {:#02X?} received!", n),
+                                n => { println!("Unknown VDU command: {:#02X?}.", n);}
+                            }
+                        },
+                        0x19 => {
+                            let mode = self.read_byte();
+                            let x = self.read_word();
+                            let y = self.read_word();
+                            println!("PLOT {},{},{}",mode,x,y);
+                            self.plot(mode,x,y);
+                        },
+                        0x1D => {
+                            let x = self.read_word() as i32;
+                            let y = self.read_word() as i32;
+                            if x>= 0 && y>= 0 {
+                                self.graph_origin=self.scale(Point::new(x,y));
+                            }
+                            println!("Graph origin {},{}",x,y);
+                        },
+                        0x1E => {println!("Home."); self.cursor.home();},
+                        0x1F => {
+                            let x = self.read_byte() as i32 * self.cursor.font_width;
+                            let y = self.read_byte() as i32 * self.cursor.font_height;
+                            println!("TAB({},{})",x,y);
+                            if x < self.cursor.screen_width && y < self.cursor.screen_height
+                            {
+                                self.cursor.position_x = x;
+                                self.cursor.position_y = y;
+                            }
+                        },
+                        0x7F => {
+                            println!("BACKSPACE.");
+                            self.backspace();
+                        },
+                        n => println!("Unknown Command {:#02X?} received!", n),
+                    }
                 }
             },
             Err(_e) => ()
@@ -803,6 +821,10 @@ impl VDP<'_> {
                 let b = self.read_byte();
                 self.logical_coords = (b!=0);
                 println!("Set logical coords {}\n",self.logical_coords);
+            },
+            0xff => {
+                println!("Switch to terminal mode\n");
+                self.switch_terminal_mode();
             }
             n => println!("Unknown VSC command: {:#02X?}.", n),
         }
@@ -874,8 +896,9 @@ impl VDP<'_> {
     }
         
     fn check_scrolling_needed(&mut self) {
-        let overdraw = self.cursor.position_y - self.current_video_mode.screen_height as i32 + self.cursor.font_height;
+        let mut overdraw = self.cursor.position_y - self.current_video_mode.screen_height as i32 + self.cursor.font_height;
         if overdraw > 0 {
+            overdraw = self.cursor.font_height; // Always scroll the entire height of the font.
             println!("Need to scroll! Overdraw: {}", overdraw);
             let mut scrolled_texture = self.texture_creator.create_texture(None, sdl2::render::TextureAccess::Target, self.current_video_mode.screen_width, self.current_video_mode.screen_height).unwrap();
             self.canvas.with_texture_canvas(&mut scrolled_texture, |texture_canvas| {
@@ -1124,5 +1147,289 @@ impl VDP<'_> {
         } else {
             Color::RGBA(0, 0, 0, 0)
         }          
+    }
+
+    fn switch_terminal_mode(&mut self) {
+        // Select 8x19 font on 640x480 mode.
+        self.font_data = FONT_8x19_BYTES[32*19..].to_vec();
+        self.cursor.font_height = 19;
+        self.cursor.font_width = 8;
+        self.change_mode(3); // This is different from real Agon, which supports termianl mode on top of any video mode.
+        self.foreground_color=Color::RGB(170, 170, 170);
+        self.tx.send(0); // CP/M waits for a byte to be returned.
+        self.terminal_mode = true;
+    }
+
+    fn print_terminal(&mut self, n: u8) {
+        match n {
+            n if n>=0x20 && n!=0x7f => {
+                println!("Terminal mode: printable char {}",n);
+                self.render_char(n);
+                self.cursor.right();
+                self.check_scrolling_needed();
+            }
+            0x08 => {println!("Terminal mode: BS."); self.cursor.left();},
+            // Note: TAB is handled internally by CP/M BIOS.
+            0x0A => {
+                println!("Terminal mode: LF.");
+                self.cursor.down();
+                self.check_scrolling_needed();
+            },
+            0x0D => {println!("Terminal mode: CR."); self.cursor.home();},
+            0x1b => {println!("Terminal mode: ESC.");
+                     let (cmd,params) = self.parse_control();
+                     match cmd {
+                         b'A' => {
+                             let mut n = params[0];
+                             if n==0 {
+                                 n=1;
+                             }
+                             println!("Cursor up {}",n);
+                             for _ in 0..n {
+                                 self.cursor.up();
+                             }
+                         },
+                         b'B' => {
+                             let mut n = params[0];
+                             if n==0 {
+                                 n=1;
+                             }
+                             println!("Cursor down {}",n);
+                             for _ in 0..n {
+                                 self.cursor.down();
+                                 self.check_scrolling_needed();
+                             }
+                         },
+                         b'C' => {
+                             let mut n = params[0];
+                             if n==0 {
+                                 n=1;
+                             }
+                             println!("Cursor right {}",n);
+                             for _ in 0..n {
+                                 self.cursor.right();
+                                 self.check_scrolling_needed();
+                             }
+                         },
+                         b'D' => {
+                             let mut n = params[0];
+                             if n==0 {
+                                 n=1;
+                             }
+                             println!("Cursor left {}",n);
+                             for _ in 0..n {
+                                 self.cursor.left();
+                             }
+                         },
+                         b'H' | b'f' => {
+                             let mut row = params[0];
+                             let mut col = 1;
+                             if params.len()>=2 {
+                                 col = params[1];
+                             }
+                             if (row==0) {
+                                 row=1;
+                             }
+                             if (col==0) {
+                                 col=1;
+                             }
+                             println!("Cursor position r={},c={}",row,col);
+                             let x = (col-1) as i32 * self.cursor.font_width;
+                             let y = (row-1) as i32 * self.cursor.font_height;
+                             if x < self.cursor.screen_width && y < self.cursor.screen_height
+                             {
+                                 self.cursor.position_x = x;
+                                 self.cursor.position_y = y;
+                             }
+                         },
+                         b'J' => {
+                             let n = params[0];
+                             println!("Clear screen {}",n);
+                             match n {
+                                 0 => {
+                                     self.clear_line(0);
+                                     let px=self.cursor.position_y+self.cursor.font_height;
+                                     self.clear_lines(px, self.cursor.screen_height-px);
+                                 },
+                                 1 => {
+                                     self.clear_lines(0,self.cursor.position_y);
+                                     self.clear_line(1);
+                                 },
+                                 2 => {
+                                     self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
+                                         texture_canvas.set_draw_color(self.background_color);
+                                         texture_canvas.clear();
+                                     });
+                                 },
+                                 _ => {},
+                             }                            
+                         },
+                         b'K' => {
+                             let n = params[0];
+                             println!("Clear line {}",n);
+                             self.clear_line(n);
+                         },
+                         b'L' => {
+                             let mut n = params[0];
+                             if n==0 {
+                                 n=1;
+                             }
+                             println!("Insert lines {}",n);
+                             self.insert_lines(n);
+                         },
+                         b'M' => {
+                             let mut n = params[0];
+                             if n==0 {
+                                 n=1;
+                             }
+                             println!("Delete lines {}",n);
+                             self.delete_lines(n);
+                         },
+                         b'm' => {
+                             for attr in params.iter() {
+                                 match attr {
+                                     0 => { 
+                                         println!("Normal");
+                                         self.foreground_color=Color::RGB(170, 170, 170);
+                                         self.background_color=Color::RGB(0, 0, 0);
+                                         self.terminal_reverse = false;
+                                         self.terminal_underline = false;
+                                     },
+                                     1 => {
+                                         println!("Bold");
+                                         self.foreground_color=Color::RGB(255, 255, 255);
+                                     },
+                                     4 => {
+                                         println!("Underline");
+                                         self.terminal_underline = true;
+                                     },
+                                     7 => {
+                                         println!("Reverse");
+                                         self.terminal_reverse = true;
+                                     },
+                                     30..=37 => {
+                                         println!("Foreground");
+                                         self.foreground_color = *self.current_video_mode.palette[(attr-30) as usize];                                         
+                                     },
+                                     40..=47 => {
+                                         println!("Background");
+                                         self.background_color = *self.current_video_mode.palette[(attr-40) as usize];                                         
+                                     },
+                                     _ => {println!("Unimplemented attribute code {}",attr);},
+                                 }
+                             }
+                         },                         
+                         _ => {println!("Unimplemented ESC command {}",cmd);},
+                     }
+            },
+            _ => {println!("Unimplemented control char {}",n); },    
+        }
+    }
+
+    // Clear part or all of the current text line (ESC [ K command)
+    fn clear_line(&mut self, n: u8) {
+        let posy = self.cursor.position_y;
+        let dy = self.cursor.font_height;
+        let mut posx = 0;
+        let mut dx = self.cursor.screen_width;
+        if n==0 {
+            posx = self.cursor.position_x;
+            dx = self.cursor.screen_width-self.cursor.position_x;
+        } else {
+            if n==1 {
+                dx = self.cursor.position_x+self.cursor.font_width; 
+            }
+        }
+        if dx > 0 {
+            self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
+                texture_canvas.set_draw_color(self.background_color);
+                texture_canvas.fill_rect(Rect::new(posx, posy, dx as u32, dy as u32));
+            });
+        }
+    }
+
+    fn clear_lines(&mut self, start: i32, h: i32) {
+        if h>0 {
+           let  w=self.cursor.screen_width;
+            self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
+                texture_canvas.set_draw_color(self.background_color);
+                texture_canvas.fill_rect(Rect::new(0, start, w as u32, h as u32));
+            });
+        }
+    }
+
+    fn delete_lines(&mut self, n: u8) {
+        let start = self.cursor.position_y;
+        let width = self.cursor.screen_width as u32;
+        let blanks = (n as i32)*self.cursor.font_height;
+        let mut scrolled = self.cursor.screen_height-start-blanks;
+        if scrolled <= 0 {
+            scrolled = 0;
+        }
+        let mut scrolled_texture = self.texture_creator.create_texture(None, sdl2::render::TextureAccess::Target, self.current_video_mode.screen_width, self.current_video_mode.screen_height).unwrap();
+        self.canvas.with_texture_canvas(&mut scrolled_texture, |texture_canvas| {
+            let rect_unchanged = Rect::new(0,0,width,start as u32);
+            texture_canvas.set_draw_color(self.background_color);
+            texture_canvas.clear();
+            texture_canvas.copy(&self.texture, rect_unchanged, rect_unchanged);
+            let rect_src = Rect::new(0, start+blanks, width, scrolled as u32);
+            let rect_dst = Rect::new(0, start, width, scrolled as u32);
+            texture_canvas.copy(&self.texture, rect_src, rect_dst);
+        });        
+        self.texture = scrolled_texture;        
+    }
+        
+
+    fn insert_lines(&mut self, n: u8) {
+        let start = self.cursor.position_y;
+        let width = self.cursor.screen_width as u32;
+        let blanks = (n as i32)*self.cursor.font_height;
+        let mut scrolled = self.cursor.screen_height-start-blanks;
+        if scrolled <= 0 {
+            scrolled = 0;
+        }
+        let mut scrolled_texture = self.texture_creator.create_texture(None, sdl2::render::TextureAccess::Target, self.current_video_mode.screen_width, self.current_video_mode.screen_height).unwrap();
+        self.canvas.with_texture_canvas(&mut scrolled_texture, |texture_canvas| {
+            let rect_unchanged = Rect::new(0,0,width,start as u32);
+            texture_canvas.set_draw_color(self.background_color);
+            texture_canvas.clear();
+            texture_canvas.copy(&self.texture, rect_unchanged, rect_unchanged);
+            let rect_src = Rect::new(0, start, width, scrolled as u32);
+            let rect_dst = Rect::new(0, start+blanks, width, scrolled as u32);
+            texture_canvas.copy(&self.texture, rect_src, rect_dst);
+        });        
+        self.texture = scrolled_texture;        
+    }
+        
+    // Parse the control codes following ESC
+    fn parse_control(&mut self) -> (u8, Vec<u8>) {
+        let mut v = Vec::new();
+        let mut p = 0;
+        let mut cmd = 0;
+        let c = self.read_byte();
+        match c {
+            b'[' => {
+                loop {
+                    let c = self.read_byte();
+                    match c {
+                        b'0'..=b'9' => { // digits are part of a parameter
+                            p = p*10 + (c as i32) - 48;
+                        }
+                        b';' => { // params separator.
+                            v.push(p as u8);
+                            p = 0;
+                        }
+                        _ => {
+                            // Any other byte terminates command.
+                            v.push(p as u8);
+                            cmd = c;
+                            break; 
+                        }                        
+                    }
+                };
+            },
+            _ => {},
+        }
+        (cmd,v)
     }
 }
