@@ -957,12 +957,11 @@ impl VDP<'_> {
                 let h = self.read_word() as i32;
                 println!("Read bitmap {} w={} h={}", self.current_bitmap,w,h);
                 if (w > 0 && h > 0) {
-                    let mut tex =
-                        self.texture_creator.create_texture(None, sdl2::render::TextureAccess::Target,w as u32,h  as u32).unwrap();
+                    let mut tex = self.texture_creator.create_texture(PixelFormatEnum::RGBA8888, sdl2::render::TextureAccess::Target,w as u32,h  as u32).unwrap();
                     for y in 0..h {
                         for x in 0..w {
                             let c1 = self.read_long();
-                            let c=self.color_quantize(c1);
+                            let c= self.color_quantize(c1);
                             self.canvas.with_texture_canvas(&mut tex, |texture_canvas| {
                                 texture_canvas.set_blend_mode(BlendMode::None);
                                 texture_canvas.set_draw_color(c);
@@ -970,6 +969,7 @@ impl VDP<'_> {
                             });
                         }
                     }
+                    tex.set_blend_mode(BlendMode::Blend);
                     self.bitmaps[self.current_bitmap as usize ] = Some(tex);
                 }
             },
@@ -978,8 +978,7 @@ impl VDP<'_> {
                 let h = self.read_word() as i32;
                 println!("Read bitmap {} w={} h={} one colour", self.current_bitmap,w,h);
                 if (w > 0 && h > 0) {
-                    let mut tex =
-                        self.texture_creator.create_texture(None, sdl2::render::TextureAccess::Target,w as u32,h  as u32).unwrap();
+                    let mut tex = self.texture_creator.create_texture(PixelFormatEnum::RGBA8888, sdl2::render::TextureAccess::Target,w as u32,h  as u32).unwrap();
                     let c1 = self.read_long();
                     let c=self.color_quantize(c1);
                     for y in 0..h {
@@ -991,6 +990,7 @@ impl VDP<'_> {
                             });
                         }
                     }
+                    tex.set_blend_mode(BlendMode::Blend);
                     self.bitmaps[self.current_bitmap as usize ] = Some(tex);
                 }                
             },
@@ -1142,11 +1142,7 @@ impl VDP<'_> {
     }
     
     fn color_quantize(&mut self,c: sdl2::pixels::Color) -> sdl2::pixels::Color {
-        if (c.a > 0) {
-            Color::RGBA((c.r/64)*85, (c.g/64)*85, (c.b/64)*85, 255)
-        } else {
-            Color::RGBA(0, 0, 0, 0)
-        }          
+        Color::RGBA((c.r/64)*85, (c.g/64)*85, (c.b/64)*85, c.a)
     }
 
     fn switch_terminal_mode(&mut self) {
