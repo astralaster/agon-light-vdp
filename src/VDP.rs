@@ -762,7 +762,10 @@ impl VDP<'_> {
                     }
                 }
             },
-            Err(_e) => ()
+            Err(TryRecvError::Empty) => {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            Err(TryRecvError::Disconnected) => ()
         }
     }
 
