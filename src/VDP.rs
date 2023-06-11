@@ -207,8 +207,9 @@ impl VDP<'_> {
     }
     
     pub fn run(&mut self) {
-        self.do_comms();
-        
+        if !self.do_comms() {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
         
         if self.last_vsync.elapsed().as_micros() >  (1_000_000u32 / self.current_video_mode.refresh_rate as u32).into() {
             self.vsync_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -637,7 +638,8 @@ impl VDP<'_> {
         Color::RGBA(b[0],b[1],b[2],b[3])
     } 
 
-    fn do_comms(&mut self) {
+    /// @return true if data was received
+    fn do_comms(&mut self) -> bool {
         match self.try_read_byte() {
             Ok(n) => {
                 if self.terminal_mode {
@@ -761,8 +763,10 @@ impl VDP<'_> {
                         n => println!("Unknown Command {:#02X?} received!", n),
                     }
                 }
+                true
             },
-            Err(_e) => ()
+            Err(TryRecvError::Empty) => false,
+            Err(TryRecvError::Disconnected) => false
         }
     }
 
