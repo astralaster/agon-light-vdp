@@ -24,7 +24,9 @@ struct Cursor {
     screen_width: i32,
     screen_height: i32,
     font_width: i32,
-    font_height: i32
+    font_height: i32,
+    paged_mode: bool,
+    paged_count: i32,
 }
 
 impl Cursor {
@@ -35,7 +37,9 @@ impl Cursor {
             screen_width,
             screen_height,
             font_width,
-            font_height
+            font_height,
+            paged_mode: false,
+            paged_count: 0,
         }
     }
 
@@ -45,6 +49,12 @@ impl Cursor {
 
     fn down(&mut self) {
         self.position_y += self.font_height;
+        if self.paged_mode {
+            self.paged_count += 1;
+            if self.paged_count * self.font_height >= self.screen_height {
+                self.paged_count = -2;
+            }
+        }
     }
 
     fn up(&mut self) {
@@ -227,12 +237,19 @@ impl VDP<'_> {
         }
     }
 
-    pub fn send_key(&self, scancode: Scancode, keymod: Mod, down: bool) {
+    pub fn send_key(&mut self, scancode: Scancode, keymod: Mod, down: bool) {
         let fabgl_vk = keymap::keymap::sdl_scancode_to_fbgl_virtual_key(scancode, keymod);
         let mut ascii = keymap::keymap::fabgl_virtual_key_to_ascii(&fabgl_vk);
 
         if keymod.contains(Mod::LCTRLMOD) || keymod.contains(Mod::RCTRLMOD) {
             ascii = ascii & 0x1F;
+            if ascii == 0x0e {
+                self.cursor.paged_mode = true;
+            } else {
+                if ascii == 0x0f {
+                    self.cursor.paged_mode = false;
+                }
+            }
         }
         if (self.terminal_mode) {
             //TODO handle cursor keys.
@@ -242,7 +259,12 @@ impl VDP<'_> {
         } else {
             let mut modifiers: u8 = 0;
             if keymod.contains(Mod::LCTRLMOD) || keymod.contains(Mod::RCTRLMOD)   { modifiers |= 0b00000001; }
-            if keymod.contains(Mod::LSHIFTMOD) || keymod.contains(Mod::RSHIFTMOD) { modifiers |= 0b00000010; }
+            if keymod.contains(Mod::LSHIFTMOD) || keymod.contains(Mod::RSHIFTMOD) {
+                modifiers |= 0b00000010;
+                if self.cursor.paged_mode && self.cursor.paged_count == -2 {
+                    self.cursor.paged_count = -1;
+                }
+            }
             if keymod.contains(Mod::LALTMOD)                                      { modifiers |= 0b00000100; }
             if keymod.contains(Mod::RALTMOD)                                      { modifiers |= 0b00001000; }
             if keymod.contains(Mod::CAPSMOD)                                      { modifiers |= 0b00010000; }
@@ -356,6 +378,7 @@ impl VDP<'_> {
         self.clear_sprites();
         self.cursor.position_x = 0;
         self.cursor.position_y = 0;
+        self.cursor.paged_count = 0;
     }
     
     fn clg(&mut self) {
@@ -640,6 +663,16 @@ impl VDP<'_> {
 
     /// @return true if data was received
     fn do_comms(&mut self) -> bool {
+        if self.cursor.paged_mode {
+            if self.cursor.paged_count == -2 {
+                return false; // do not process any bytes while waiting for shift key.
+                
+            }
+            if self.cursor.paged_count == -1 {
+                self.check_scrolling_needed(); // do the scroll that was postponed.
+                self.cursor.paged_count = 0;
+            }
+        }
         match self.try_read_byte() {
             Ok(n) => {
                 if self.terminal_mode {
@@ -665,8 +698,8 @@ impl VDP<'_> {
                             self.cls();
                         },
                         0x0D => {println!("Cursor home."); self.cursor.home();},
-                        0x0E => {println!("PageMode ON?");},
-                        0x0F => {println!("PageMode OFF?");},
+                        0x0E => {self.cursor.paged_mode = true; println!("PageMode ON");},
+                        0x0F => {self.cursor.paged_mode = false; println!("PageMode OFF");},
                         0x10 => {
                             println!("CLG");
                             self.clg();
@@ -900,6 +933,9 @@ impl VDP<'_> {
     }
         
     fn check_scrolling_needed(&mut self) {
+        if self.cursor.paged_mode && self.cursor.paged_count == -2 {
+            return;
+        }
         let mut overdraw = self.cursor.position_y - self.current_video_mode.screen_height as i32 + self.cursor.font_height;
         if overdraw > 0 {
             overdraw = self.cursor.font_height; // Always scroll the entire height of the font.
