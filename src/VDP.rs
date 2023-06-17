@@ -727,6 +727,10 @@ impl VDP<'_> {
                         0x16 => {
                             println!("MODE.");
                             let mode = self.read_byte();
+                            if mode >= VIDEO_MODES.len() as u8 {
+                                println!("Invalid mode: {}", mode);
+                                return true;
+                            }
                             self.change_mode(mode.into());
                             self.send_mode_information();
                         },
