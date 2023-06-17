@@ -1000,19 +1000,19 @@ impl VDP<'_> {
                 let w = self.read_word() as i32;
                 let h = self.read_word() as i32;
                 println!("Read bitmap {} w={} h={}", self.current_bitmap,w,h);
-                if (w > 0 && h > 0) {
-                    let mut tex = self.texture_creator.create_texture(PixelFormatEnum::RGBA8888, sdl2::render::TextureAccess::Target,w as u32,h  as u32).unwrap();
-                    for y in 0..h {
-                        for x in 0..w {
-                            let c1 = self.read_long();
-                            let c= self.color_quantize(c1);
-                            self.canvas.with_texture_canvas(&mut tex, |texture_canvas| {
-                                texture_canvas.set_blend_mode(BlendMode::None);
-                                texture_canvas.set_draw_color(c);
-                                texture_canvas.draw_point(Point::new(x,y));
-                            });
-                        }
+                if w > 0 && h > 0 {
+                    let mut tex = self.texture_creator.create_texture(PixelFormatEnum::RGBA8888, sdl2::render::TextureAccess::Static,w as u32,h  as u32).unwrap();
+                    let mut pixel_data = Vec::new();
+                    let bitmap_size = h*w;
+                    for _i in 0..bitmap_size {
+                        let c1 = self.read_long();
+                        let c= self.color_quantize(c1);
+                        pixel_data.push(c.a);
+                        pixel_data.push(c.b);
+                        pixel_data.push(c.g);
+                        pixel_data.push(c.r);
                     }
+                    tex.update(None, &pixel_data, w as usize * 4).unwrap();
                     tex.set_blend_mode(BlendMode::Blend);
                     self.bitmaps[self.current_bitmap as usize ] = Some(tex);
                 }
@@ -1021,19 +1021,19 @@ impl VDP<'_> {
                 let w = self.read_word() as i32;
                 let h = self.read_word() as i32;
                 println!("Read bitmap {} w={} h={} one colour", self.current_bitmap,w,h);
-                if (w > 0 && h > 0) {
-                    let mut tex = self.texture_creator.create_texture(PixelFormatEnum::RGBA8888, sdl2::render::TextureAccess::Target,w as u32,h  as u32).unwrap();
+                if w > 0 && h > 0 {
+                    let mut tex = self.texture_creator.create_texture(PixelFormatEnum::RGBA8888, sdl2::render::TextureAccess::Static,w as u32,h  as u32).unwrap();
                     let c1 = self.read_long();
                     let c=self.color_quantize(c1);
-                    for y in 0..h {
-                        for x in 0..w {
-                            self.canvas.with_texture_canvas(&mut tex, |texture_canvas| {
-                                texture_canvas.set_blend_mode(BlendMode::None);
-                                texture_canvas.set_draw_color(c);
-                                texture_canvas.draw_point(Point::new(x,y));
-                            });
-                        }
+                    let bitmap_size = h*w;
+                    let mut pixel_data = Vec::new();
+                    for _i in 0..bitmap_size {
+                        pixel_data.push(c.a);
+                        pixel_data.push(c.b);
+                        pixel_data.push(c.g);
+                        pixel_data.push(c.r);
                     }
+                    tex.update(None, &pixel_data, w as usize * 4).unwrap();
                     tex.set_blend_mode(BlendMode::Blend);
                     self.bitmaps[self.current_bitmap as usize ] = Some(tex);
                 }                
