@@ -163,7 +163,7 @@ impl VDP<'_> {
     pub fn new(canvas: Canvas<Window>, texture_creator: &TextureCreator<WindowContext>, scale_window: u8, tx: Sender<u8>, rx: Receiver<u8>, vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>, audio_subsystem: AudioSubsystem) -> Result<VDP, String> {
         let mode =  &VIDEO_MODES[1];
     
-        let texture = texture_creator.create_texture(None, sdl2::render::TextureAccess::Target, mode.screen_width, mode.screen_height).unwrap();
+        let texture = texture_creator.create_texture(None, sdl2::render::TextureAccess::Streaming, mode.screen_width, mode.screen_height).unwrap();
      
         Ok({
             let mut v=VDP {
@@ -283,7 +283,7 @@ impl VDP<'_> {
         self.cursor.screen_height = self.current_video_mode.screen_height as i32;
         self.cursor.screen_width = self.current_video_mode.screen_width as i32;
         self.canvas.window_mut().set_size(self.current_video_mode.screen_width * self.scale_window as u32, self.current_video_mode.screen_height * self.scale_window as u32).unwrap();
-        self.texture = self.texture_creator.create_texture(None, sdl2::render::TextureAccess::Target, self.current_video_mode.screen_width, self.current_video_mode.screen_height).unwrap();
+        self.texture = self.texture_creator.create_texture(None, sdl2::render::TextureAccess::Streaming, self.current_video_mode.screen_width, self.current_video_mode.screen_height).unwrap();
         self.cls();
         self.p1.x = 0;
         self.p1.y = 0;
@@ -322,18 +322,26 @@ impl VDP<'_> {
             let start = (self.cursor.font_height * (shifted_ascii as i32)) as usize;
             let end = start+self.cursor.font_height as usize;
             let mut points = Self::get_points_from_font(self.font_data[start..end].to_vec(),self.terminal_underline);
-            
-            for point in points.iter_mut() {
-                point.x += self.cursor.position_x;
-                point.y += self.cursor.position_y;
+            if !points.is_empty() {
+                for point in points.iter_mut() {
+                    point.x += self.cursor.position_x;
+                    point.y += self.cursor.position_y;
+                }
+                //let char_rect = Rect::new(self.cursor.position_x, self.cursor.position_y, 8, self.cursor.font_height as u32);
+                self.texture.with_lock(None, |buffer: &mut [u8], pitch: usize| {
+                    for point in points.iter() {
+                        let offset = (point.y as usize * pitch) + (point.x as usize * 4);
+                        if offset + 3 < buffer.len() {
+                            buffer[offset] = self.foreground_color.b;
+                            buffer[offset + 1] = self.foreground_color.g;
+                            buffer[offset + 2] = self.foreground_color.r;
+                            buffer[offset + 3] = 255;
+                        } else {
+                            println!("Offset out of bounds: {}", offset);
+                        }
+                    }
+                }).unwrap();
             }
-
-            self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
-                texture_canvas.set_draw_color(if self.terminal_reverse {self.foreground_color} else {self.background_color});
-                texture_canvas.fill_rect(Rect::new(self.cursor.position_x, self.cursor.position_y, 8, self.cursor.font_height as u32));
-                texture_canvas.set_draw_color(if self.terminal_reverse {self.background_color} else {self.foreground_color});
-                texture_canvas.draw_points(&points[..]);
-            });
         }
     }
 
@@ -899,7 +907,7 @@ impl VDP<'_> {
             },
             _ => {}
         }
-        let mut scrolled_texture = self.texture_creator.create_texture(None, sdl2::render::TextureAccess::Target, self.current_video_mode.screen_width, self.current_video_mode.screen_height).unwrap();
+        let mut scrolled_texture = self.texture_creator.create_texture(None, sdl2::render::TextureAccess::Streaming, self.current_video_mode.screen_width, self.current_video_mode.screen_height).unwrap();
         self.canvas.with_texture_canvas(&mut scrolled_texture, |texture_canvas| {
             texture_canvas.set_draw_color(self.background_color);
             texture_canvas.clear();
@@ -944,7 +952,7 @@ impl VDP<'_> {
         if overdraw > 0 {
             overdraw = self.cursor.font_height; // Always scroll the entire height of the font.
             println!("Need to scroll! Overdraw: {}", overdraw);
-            let mut scrolled_texture = self.texture_creator.create_texture(None, sdl2::render::TextureAccess::Target, self.current_video_mode.screen_width, self.current_video_mode.screen_height).unwrap();
+            let mut scrolled_texture = self.texture_creator.create_texture(None, sdl2::render::TextureAccess::Streaming, self.current_video_mode.screen_width, self.current_video_mode.screen_height).unwrap();
             self.canvas.with_texture_canvas(&mut scrolled_texture, |texture_canvas| {
                 texture_canvas.set_draw_color(self.background_color);
                 texture_canvas.clear();
@@ -1406,7 +1414,7 @@ impl VDP<'_> {
         if scrolled <= 0 {
             scrolled = 0;
         }
-        let mut scrolled_texture = self.texture_creator.create_texture(None, sdl2::render::TextureAccess::Target, self.current_video_mode.screen_width, self.current_video_mode.screen_height).unwrap();
+        let mut scrolled_texture = self.texture_creator.create_texture(None, sdl2::render::TextureAccess::Streaming, self.current_video_mode.screen_width, self.current_video_mode.screen_height).unwrap();
         self.canvas.with_texture_canvas(&mut scrolled_texture, |texture_canvas| {
             let rect_unchanged = Rect::new(0,0,width,start as u32);
             texture_canvas.set_draw_color(self.background_color);
@@ -1428,7 +1436,7 @@ impl VDP<'_> {
         if scrolled <= 0 {
             scrolled = 0;
         }
-        let mut scrolled_texture = self.texture_creator.create_texture(None, sdl2::render::TextureAccess::Target, self.current_video_mode.screen_width, self.current_video_mode.screen_height).unwrap();
+        let mut scrolled_texture = self.texture_creator.create_texture(None, sdl2::render::TextureAccess::Streaming, self.current_video_mode.screen_width, self.current_video_mode.screen_height).unwrap();
         self.canvas.with_texture_canvas(&mut scrolled_texture, |texture_canvas| {
             let rect_unchanged = Rect::new(0,0,width,start as u32);
             texture_canvas.set_draw_color(self.background_color);
