@@ -379,10 +379,17 @@ impl VDP<'_> {
 
     
     fn cls(&mut self) {
-        self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
-            texture_canvas.set_draw_color(self.background_color);
-            texture_canvas.clear();
-        });
+        self.texture.with_lock(None, |buffer: &mut [u8], pitch: usize| {
+            for y in 0..self.current_video_mode.screen_height {
+                for x in 0..self.current_video_mode.screen_width {
+                    let offset = (y as usize * pitch) + (x as usize * 4);
+                    buffer[offset] = self.background_color.b;
+                    buffer[offset + 1] = self.background_color.g;
+                    buffer[offset + 2] = self.background_color.r;
+                    buffer[offset + 3] = 255;
+                }
+            }
+        }).unwrap();
         self.clear_sprites();
         self.cursor.position_x = 0;
         self.cursor.position_y = 0;
@@ -390,10 +397,17 @@ impl VDP<'_> {
     }
     
     fn clg(&mut self) {
-        self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
-            texture_canvas.set_draw_color(self.background_color);
-            texture_canvas.clear();
-        });
+        self.texture.with_lock(None, |buffer: &mut [u8], pitch: usize| {
+            for y in 0..self.current_video_mode.screen_height {
+                for x in 0..self.current_video_mode.screen_width {
+                    let offset = (y as usize * pitch) + (x as usize * 4);
+                    buffer[offset] = self.background_color.b;
+                    buffer[offset + 1] = self.background_color.g;
+                    buffer[offset + 2] = self.background_color.r;
+                    buffer[offset + 3] = 255;
+                }
+            }
+        }).unwrap();
     }
 
     fn color(&mut self, c: u8) {
