@@ -16,7 +16,9 @@ use chrono::{Local,DateTime,Datelike,Timelike};
 mod audio;
 use audio::audio::AudioChannels;
 use sdl2::AudioSubsystem;
+
 mod keymap;
+use self::keymap::*;
 
 struct Cursor {
     position_x: i32,
@@ -158,6 +160,7 @@ pub struct VDP<'a> {
     bitmaps: Vec<Option<Texture<'a>>>,
     sprites: Vec<Sprite>,
     scale_window: u8,
+    keyboard_layout: Box<dyn KeyboardLayout>,
 }
 
 impl VDP<'_> {
@@ -165,7 +168,7 @@ impl VDP<'_> {
         let mode =  &VIDEO_MODES[1];
     
         let texture = texture_creator.create_texture(None, sdl2::render::TextureAccess::Target, mode.screen_width, mode.screen_height).unwrap();
-     
+
         Ok({
             let mut v=VDP {
             cursor: Cursor::new(mode.screen_width as i32, mode.screen_height as i32, 8, 8),
@@ -200,6 +203,7 @@ impl VDP<'_> {
             bitmaps: Vec::new(),
             sprites: Vec::new(),
             scale_window,
+            keyboard_layout: Box::new(KeyboardLayoutUS{}),
             };
             for _ in 0..256 {
                 v.bitmaps.push(None);
@@ -240,8 +244,8 @@ impl VDP<'_> {
     }
 
     pub fn send_key(&mut self, scancode: Scancode, keymod: Mod, down: bool) {
-        let fabgl_vk = keymap::keymap::sdl_scancode_to_fbgl_virtual_key(scancode, keymod);
-        let mut ascii = keymap::keymap::fabgl_virtual_key_to_ascii(&fabgl_vk);
+        let fabgl_vk = self.keyboard_layout.sdl_scancode_to_fbgl_virtual_key(&scancode, &keymod);
+        let mut ascii = keymap::fabgl_virtual_key_to_ascii(&fabgl_vk);
 
         if keymod.contains(Mod::LCTRLMOD) || keymod.contains(Mod::RCTRLMOD) {
             ascii = ascii & 0x1F;
@@ -817,8 +821,21 @@ impl VDP<'_> {
                 self.general_poll();
             },
             0x81 => {
-                println!("Set keyboard layout");
-                self.read_byte();
+                print!("Set keyboard layout to: ");
+                let keyboard_layout = self.read_byte();
+                match keyboard_layout {
+                    0x01 => {
+                        println!("US");
+                        self.keyboard_layout = Box::new(KeyboardLayoutUS);
+                    },
+                    0x02 => {
+                        println!("DE");
+                        self.keyboard_layout = Box::new(KeyboardLayoutDE);
+                    },
+                    _ => {
+                        println!("Unknown keyboard layout: {}", keyboard_layout);
+                    }
+                }
             },
             0x82 => {
                 println!("Send Cursor Position");
