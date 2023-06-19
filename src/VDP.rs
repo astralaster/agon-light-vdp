@@ -375,7 +375,7 @@ impl VDP<'_> {
             texture_canvas.set_draw_color(self.background_color);
             texture_canvas.clear();
         });
-        self.clear_sprites();
+        self.num_sprites = 0;
         self.cursor.position_x = 0;
         self.cursor.position_y = 0;
         self.cursor.paged_count = 0;
@@ -1149,6 +1149,7 @@ impl VDP<'_> {
                 // Reset sprite system.
                 println!("Reset sprite system");
                 self.cls();
+                self.clear_sprites();
                 for bm in self.bitmaps.iter_mut() {
                     *bm=None;
                 }
@@ -1172,8 +1173,9 @@ impl VDP<'_> {
         let output_size = self.canvas.output_size().unwrap();
         let scale_x = output_size.0 as f32 / self.current_video_mode.screen_width as f32;
         let scale_y = output_size.1 as f32 / self.current_video_mode.screen_height as f32;
+        let mut idx=0;
         for s in self.sprites.iter() {
-            if s.visible {
+            if s.visible && idx<self.num_sprites {
                 let bm = self.bitmaps[s.frames[s.current_frame as usize] as usize].as_ref().unwrap();
                 let q = bm.query();
                 let sx=q.width;
@@ -1182,6 +1184,7 @@ impl VDP<'_> {
                                  Rect::new((s.pos_x as f32 * scale_x) as i32, (s.pos_y as f32 * scale_y) as i32, sx * scale_x as u32, sy * scale_y as u32)                                 
                 );
             }
+            idx+=1;
         }
     }
     
