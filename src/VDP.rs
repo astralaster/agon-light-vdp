@@ -152,6 +152,7 @@ pub struct VDP<'a> {
     font_data: Vec<u8>,
     audio_channels: AudioChannels,
     num_sprites: u8,
+    num_sprites_shown: u8,
     current_sprite: u8,
     current_bitmap: u8,
     bitmaps: Vec<Option<Texture<'a>>>,
@@ -193,6 +194,7 @@ impl VDP<'_> {
             graph_origin: Point::new(0,0),
             audio_channels: AudioChannels::new(audio_subsystem),
             num_sprites: 0,
+            num_sprites_shown: 0,
             current_sprite: 0,
             current_bitmap: 0,
             bitmaps: Vec::new(),
@@ -376,6 +378,7 @@ impl VDP<'_> {
             texture_canvas.clear();
         });
         self.num_sprites = 0;
+        self.num_sprites_shown = 0;
         self.cursor.position_x = 0;
         self.cursor.position_y = 0;
         self.cursor.paged_count = 0;
@@ -729,9 +732,9 @@ impl VDP<'_> {
                             let mode = self.read_byte();
                             if mode >= VIDEO_MODES.len() as u8 {
                                 println!("Invalid mode: {}", mode);
-                                return true;
+                            } else {
+                                self.change_mode(mode.into());
                             }
-                            self.change_mode(mode.into());
                             self.send_mode_information();
                         },
                         0x17 => {
@@ -1079,6 +1082,7 @@ impl VDP<'_> {
                 let b = self.read_byte();
                 println!("Make {} sprites active",b);
                 self.num_sprites=b;
+
             },
             8 => {
                 println!("Next frame on sprite {}",self.current_sprite);                
@@ -1142,7 +1146,8 @@ impl VDP<'_> {
                 self.sprites[self.current_sprite as usize].pos_y += y;
             },
             15 => {
-                // for now a no-op. We will refresh them anyway.
+                // actually update num_sprites_shown.
+                self.num_sprites_shown = self.num_sprites;
                 println!("Refresh sprites!");
             },
             16 => {
@@ -1162,6 +1167,7 @@ impl VDP<'_> {
 
     fn clear_sprites(&mut self) {
         self.num_sprites = 0;
+        self.num_sprites_shown = 0;
         for s in self.sprites.iter_mut() {
             s.frames = Vec::new();
             s.current_frame = 0;
@@ -1175,7 +1181,7 @@ impl VDP<'_> {
         let scale_y = output_size.1 as f32 / self.current_video_mode.screen_height as f32;
         let mut idx=0;
         for s in self.sprites.iter() {
-            if s.visible && idx<self.num_sprites {
+            if s.visible && idx < self.num_sprites_shown {
                 let bm = self.bitmaps[s.frames[s.current_frame as usize] as usize].as_ref().unwrap();
                 let q = bm.query();
                 let sx=q.width;
