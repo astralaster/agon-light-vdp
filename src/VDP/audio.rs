@@ -1,4 +1,3 @@
-
 pub mod audio {
     use sdl2::AudioSubsystem;
     use std::sync::mpsc::{Sender, Receiver};
@@ -38,7 +37,7 @@ pub mod audio {
             while true {
                 match self.rx_fromVDP.try_recv() {
                     Ok(msg) => {
-                        println!("Message received: {:?} freq {} buflen{}",msg,self.audio_spec.freq,out.len());
+                        log::info!("Message received: {:?} freq {} buflen{}",msg,self.audio_spec.freq,out.len());
                         let gen = &mut self.generators[msg.channel as usize];
                         gen.period=(self.audio_spec.freq as f32)/(msg.frequency as f32);
                         gen.phase = 0.0;
@@ -121,7 +120,7 @@ pub mod audio {
             if ((channel as i32) >= self.nchannels || self.channels_busy[channel as usize]) {
                 false
             } else {
-                println!("Trying to play note on chan {} vol {} freq {} duration {}",channel,volume,frequency,duration);
+                log::info!("Trying to play note on chan {} vol {} freq {} duration {}",channel,volume,frequency,duration);
                 if duration > 0 {
                     self.tx_to_audio.send(GeneratorMessage {
                         channel: channel,

@@ -16,7 +16,7 @@ use chrono::{Local,DateTime,Datelike,Timelike};
 mod audio;
 use audio::audio::AudioChannels;
 use sdl2::AudioSubsystem;
-
+use log::info;
 mod keymap;
 use self::keymap::*;
 
@@ -322,7 +322,7 @@ impl VDP<'_> {
     
     fn render_char(&mut self, ascii: u8)
     {
-        //println!("Render {:#02X?}", ascii);
+        //info!("Render {:#02X?}", ascii);
         if ascii >= 32 {
             let shifted_ascii = ascii - 32;
             let start = (self.cursor.font_height * (shifted_ascii as i32)) as usize;
@@ -499,17 +499,17 @@ impl VDP<'_> {
         self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
             texture_canvas.set_draw_color(self.graph_color);
             match mode {
-                4 => {println!("MOVETO");},
+                4 => {info!("MOVETO");},
                 5 => {
-                    println!("LINETO");
+                    info!("LINETO");
                     texture_canvas.draw_line(self.p1,self.p2);
                 },
                 64..=71 => {
-                    println!("PLOTDOT");
+                    info!("PLOTDOT");
                     texture_canvas.draw_point(self.p1);
                 },
                 80..=87 => {
-                    println!("TRIANGLE");
+                    info!("TRIANGLE");
                     let mut ptop : Point = self.p1;
                     let mut pmid : Point = self.p2;
                     let mut pbot : Point = self.p3;
@@ -526,7 +526,7 @@ impl VDP<'_> {
                     {
                         (pmid,pbot) = (pbot,pmid);
                     }
-                    println!("Points are {},{}  {},{} {},{}",ptop.x,ptop.y,pmid.x,pmid.y,pbot.x,pbot.y);
+                    info!("Points are {},{}  {},{} {},{}",ptop.x,ptop.y,pmid.x,pmid.y,pbot.x,pbot.y);
                     // Trace the line from top to bottom using Bresenham algo.
                     // Also trace the lines from top via mid to bottom.
                     // Draw horizontal lines between them.
@@ -549,7 +549,7 @@ impl VDP<'_> {
                         let ry = self.p1.y - self.p2.y;
                         r = ((rx*rx + ry*ry) as f32).sqrt();
                     }
-                    println!("Circle at {},{} radius {}",self.p2.x, self.p2.y,r);
+                    info!("Circle at {},{} radius {}",self.p2.x, self.p2.y,r);
                     let pstart = Point::new(self.p2.x + (r as i32), self.p2.y);
                     let mut pold = pstart;
                     let mut pnew = pold;
@@ -563,7 +563,7 @@ impl VDP<'_> {
                     }
                     texture_canvas.draw_line(pnew,pstart);
                 },
-                _ => {println!("Unsupported plot mode");}
+                _ => {info!("Unsupported plot mode");}
             }
         });        
     }    
@@ -613,7 +613,7 @@ impl VDP<'_> {
             self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
                 let rect = Rect::new(p1.x, p1.y, 1, 1);
                 let v=texture_canvas.read_pixels(rect,PixelFormatEnum::RGB888).unwrap();
-                println!("Pixel data = {},{},{},{}",v[0],v[1],v[2],v[3]);
+                info!("Pixel data = {},{},{},{}",v[0],v[1],v[2],v[3]);
                 rgb.r=v[2]; 
                 rgb.g=v[1]; 
                 rgb.b=v[0]; 
@@ -647,7 +647,7 @@ impl VDP<'_> {
         for byte in output.iter() {
             self.tx.send(*byte);
         }
-        println!("Send packet to MOS: {:#02X?}", output);
+        info!("Send packet to MOS: {:#02X?}", output);
     }
 
     fn read_byte(&mut self) -> u8 {
@@ -687,40 +687,40 @@ impl VDP<'_> {
                 } else {    
                     match n {
                         n if n >= 0x20 && n != 0x7F => {
-                            println!("Received character: {}", n as char);
+                            info!("Received character: {}", n as char);
                             self.render_char(n);
                             self.cursor.right();
                             self.check_scrolling_needed();
                         },
-                        0x08 => {println!("Cursor left."); self.cursor.left();},
-                        0x09 => {println!("Cursor right."); self.cursor.right();},
+                        0x08 => {info!("Cursor left."); self.cursor.left();},
+                        0x09 => {info!("Cursor right."); self.cursor.right();},
                         0x0A => {
-                            println!("Cursor down.");
+                            info!("Cursor down.");
                             self.cursor.down();
                             self.check_scrolling_needed();
                         },
-                        0x0B => {println!("Cursor up."); self.cursor.up();},
+                        0x0B => {info!("Cursor up."); self.cursor.up();},
                         0x0C => {
-                            println!("CLS.");
+                            info!("CLS.");
                             self.cls();
                         },
-                        0x0D => {println!("Cursor home."); self.cursor.home();},
-                        0x0E => {self.cursor.paged_mode = true; println!("PageMode ON");},
-                        0x0F => {self.cursor.paged_mode = false; println!("PageMode OFF");},
+                        0x0D => {info!("Cursor home."); self.cursor.home();},
+                        0x0E => {self.cursor.paged_mode = true; info!("PageMode ON");},
+                        0x0F => {self.cursor.paged_mode = false; info!("PageMode OFF");},
                         0x10 => {
-                            println!("CLG");
+                            info!("CLG");
                             self.clg();
                         },
                         0x11 => {
                             let c = self.read_byte();
-                            println!("COLOUR {}",c);
+                            info!("COLOUR {}",c);
                             self.color(c);
                             
                         },
                         0x12 => {
                             let m = self.read_byte();
                             let c = self.read_byte();
-                            println!("GCOL {},{}",m,c);
+                            info!("GCOL {},{}",m,c);
                             self.gcolor(m,c);
                         },
                         0x13 => {
@@ -729,10 +729,10 @@ impl VDP<'_> {
                             let r = self.read_byte();
                             let g = self.read_byte();
                             let b = self.read_byte();
-                            println!("Define Logical Colour?: l:{} p:{} r:{} g:{} b:{}", l, p, r, g, b);
+                            info!("Define Logical Colour?: l:{} p:{} r:{} g:{} b:{}", l, p, r, g, b);
                         },
                         0x16 => {
-                            println!("MODE.");
+                            info!("MODE.");
                             let mode = self.read_byte();
                             if mode >= VIDEO_MODES.len() as u8 {
                                 println!("Invalid mode: {}", mode);
@@ -742,26 +742,26 @@ impl VDP<'_> {
                             self.send_mode_information();
                         },
                         0x17 => {
-                            println!("VDU23.");
+                            info!("VDU23.");
                             match self.read_byte() {
                                 0x00 => {
-                                    println!("Video System Control.");
+                                    info!("Video System Control.");
                                     self.video_system_control();
                                 },
                                 0x01 => {
                                     let b = self.read_byte();
                                     self.cursor_enabled = (b!=0);
-                                    println!("Cursor Enable : P{}\n",self.cursor_enabled);
+                                    info!("Cursor Enable : P{}\n",self.cursor_enabled);
                                 },
                                 0x07 =>  {
                                     let extent = self.read_byte();
                                     let d = self.read_byte();
                                     let m = self.read_byte();
-                                    println!("Scroll: full {} dir {} movement {}",extent,d,m);
+                                    info!("Scroll: full {} dir {} movement {}",extent,d,m);
                                     self.scroll(extent!=0, d, m);    
                                 },
                                 0x1B => {
-                                    println!("Sprite Control");
+                                    info!("Sprite Control");
                                     self.do_sprites();
                                 },
                                 n if n>=32 => {
@@ -769,16 +769,16 @@ impl VDP<'_> {
                                         let b =  self.read_byte();
                                         self.font_data[((n-32)as u32*8+i) as usize] = b;
                                     }
-                                    println!("Redefine char bitmap: {}.", n);
+                                    info!("Redefine char bitmap: {}.", n);
                                 },
-                                n => { println!("Unknown VDU command: {:#02X?}.", n);}
+                                n => { info!("Unknown VDU command: {:#02X?}.", n);}
                             }
                         },
                         0x19 => {
                             let mode = self.read_byte();
                             let x = self.read_word();
                             let y = self.read_word();
-                            println!("PLOT {},{},{}",mode,x,y);
+                            info!("PLOT {},{},{}",mode,x,y);
                             self.plot(mode,x,y);
                         },
                         0x1D => {
@@ -787,13 +787,13 @@ impl VDP<'_> {
                             if x>= 0 && y>= 0 {
                                 self.graph_origin=self.scale(Point::new(x,y));
                             }
-                            println!("Graph origin {},{}",x,y);
+                            info!("Graph origin {},{}",x,y);
                         },
-                        0x1E => {println!("Home."); self.cursor.home();},
+                        0x1E => {info!("Home."); self.cursor.home();},
                         0x1F => {
                             let x = self.read_byte() as i32 * self.cursor.font_width;
                             let y = self.read_byte() as i32 * self.cursor.font_height;
-                            println!("TAB({},{})",x,y);
+                            info!("TAB({},{})",x,y);
                             if x < self.cursor.screen_width && y < self.cursor.screen_height
                             {
                                 self.cursor.position_x = x;
@@ -801,10 +801,10 @@ impl VDP<'_> {
                             }
                         },
                         0x7F => {
-                            println!("BACKSPACE.");
+                            info!("BACKSPACE.");
                             self.backspace();
                         },
-                        n => println!("Unknown Command {:#02X?} received!", n),
+                        n => info!("Unknown Command {:#02X?} received!", n),
                     }
                 }
                 true
@@ -817,11 +817,11 @@ impl VDP<'_> {
     fn video_system_control(&mut self) {
         match self.read_byte() {
             0x80 => {
-                println!("VDP_GP.");
+                info!("VDP_GP.");
                 self.general_poll();
             },
             0x81 => {
-                print!("Set keyboard layout to: ");
+                info!("Set keyboard layout to: ");
                 let keyboard_layout = self.read_byte();
                 match keyboard_layout {
                     0x01 => {
@@ -838,29 +838,29 @@ impl VDP<'_> {
                 }
             },
             0x82 => {
-                println!("Send Cursor Position");
+                info!("Send Cursor Position");
                 self.send_cursor_position();
             },
             0x83 => {
                 let x = self.read_word();
                 let y = self.read_word();
                 let c = self.get_screen_char(x,y);
-                println!("Get screen char at {},{} = {}",x,y,c);
+                info!("Get screen char at {},{} = {}",x,y,c);
                 self.send_screen_char(c);
             },
             0x84 => {
                 let x = self.read_word();
                 let y = self.read_word();
                 let rgb = self.get_screen_pixel(x,y);
-                println!("Get screen pixel at {},{}",x,y);
+                info!("Get screen pixel at {},{}",x,y);
                 self.send_screen_pixel(rgb);
             },
             0x85 => {
-                println!("VDP_AUDIO");
+                info!("VDP_AUDIO");
                 self.audio();
             },
             0x86 => {
-                println!("Mode Information");
+                info!("Mode Information");
                 self.send_mode_information();
             },
             0x87 => {
@@ -875,19 +875,19 @@ impl VDP<'_> {
                 }
             },
             0x88 => {
-                println!("Keyboard State");
+                info!("Keyboard State");
                 self.keyboard_state();
             },
             0xC0 => {
                 let b = self.read_byte();
                 self.logical_coords = (b!=0);
-                println!("Set logical coords {}\n",self.logical_coords);
+                info!("Set logical coords {}\n",self.logical_coords);
             },
             0xff => {
-                println!("Switch to terminal mode\n");
+                info!("Switch to terminal mode\n");
                 self.switch_terminal_mode();
             }
-            n => println!("Unknown VSC command: {:#02X?}.", n),
+            n => info!("Unknown VSC command: {:#02X?}.", n),
         }
     }
 
@@ -936,7 +936,7 @@ impl VDP<'_> {
         let volume = self.read_byte();
         let frequency = self.read_word();
         let duration = self.read_word();
-        println!("channel:{} waveform:{} volume:{} frequency:{} duration:{}", channel, waveform, volume, frequency, duration);
+        info!("channel:{} waveform:{} volume:{} frequency:{} duration:{}", channel, waveform, volume, frequency, duration);
         let res = self.audio_channels.start_tone(channel,waveform,volume,frequency,duration);
         let mut audio_packet: Vec<u8> = vec![channel, res as u8];
         self.send_packet(0x5, audio_packet.len() as u8, &mut audio_packet);
@@ -963,7 +963,7 @@ impl VDP<'_> {
         let mut overdraw = self.cursor.position_y - self.current_video_mode.screen_height as i32 + self.cursor.font_height;
         if overdraw > 0 {
             overdraw = self.cursor.font_height; // Always scroll the entire height of the font.
-            println!("Need to scroll! Overdraw: {}", overdraw);
+            info!("Need to scroll! Overdraw: {}", overdraw);
             let mut scrolled_texture = self.texture_creator.create_texture(None, sdl2::render::TextureAccess::Target, self.current_video_mode.screen_width, self.current_video_mode.screen_height).unwrap();
             self.canvas.with_texture_canvas(&mut scrolled_texture, |texture_canvas| {
                 texture_canvas.set_draw_color(self.background_color);
@@ -978,7 +978,7 @@ impl VDP<'_> {
     }
     
     fn send_mode_information(&mut self) {
-        println!("Screen width {} Screen height {}", self.cursor.screen_width, self.cursor.screen_height);
+        info!("Screen width {} Screen height {}", self.cursor.screen_width, self.cursor.screen_height);
         let mut packet: Vec<u8> = vec![
             self.cursor.screen_width.to_le_bytes()[0],
             self.cursor.screen_width.to_le_bytes()[1],
@@ -993,7 +993,7 @@ impl VDP<'_> {
 
     fn send_time(&mut self) {
         let now: DateTime<Local> = Local::now();
-        println!("Read RTC: {}",now);
+        info!("Read RTC: {}",now);
         let yr = now.year(); // year
         let mo = now.month(); // month 1..12
         let d = now.day(); // day 1..31
@@ -1013,13 +1013,13 @@ impl VDP<'_> {
         match cmd {
             0 => {
                 let b = self.read_byte();
-                println!("Select bitmap {b}");
+                info!("Select bitmap {b}");
                 self.current_bitmap = b;
             },
             1 => {
                 let w = self.read_word() as i32;
                 let h = self.read_word() as i32;
-                println!("Read bitmap {} w={} h={}", self.current_bitmap,w,h);
+                info!("Read bitmap {} w={} h={}", self.current_bitmap,w,h);
                 if w > 0 && h > 0 {
                     let mut tex = self.texture_creator.create_texture(PixelFormatEnum::RGBA8888, sdl2::render::TextureAccess::Static,w as u32,h  as u32).unwrap();
                     let mut pixel_data = Vec::new();
@@ -1040,7 +1040,7 @@ impl VDP<'_> {
             2 => {
                 let w = self.read_word() as i32;
                 let h = self.read_word() as i32;
-                println!("Read bitmap {} w={} h={} one colour", self.current_bitmap,w,h);
+                info!("Read bitmap {} w={} h={} one colour", self.current_bitmap,w,h);
                 if w > 0 && h > 0 {
                     let mut tex = self.texture_creator.create_texture(PixelFormatEnum::RGBA8888, sdl2::render::TextureAccess::Static,w as u32,h  as u32).unwrap();
                     let c1 = self.read_long();
@@ -1061,9 +1061,9 @@ impl VDP<'_> {
             3 => {
                 let x=self.read_word();
                 let y=self.read_word();
-                println!("Draw bitmap {} at {},{}",self.current_bitmap,x,y);
+                info!("Draw bitmap {} at {},{}",self.current_bitmap,x,y);
                 match &self.bitmaps[self.current_bitmap as usize] {
-                    None => {println!("Undefined bitmap");},
+                    None => {info!("Undefined bitmap");},
                     Some(bm) => { 
                         let q = bm.query();
                         let sx = q.width;
@@ -1078,31 +1078,31 @@ impl VDP<'_> {
             },
             4 => {
                 let b = self.read_byte();
-                println!("Select sprite {b}");
+                info!("Select sprite {b}");
                 self.current_sprite = b;
             },
             5 => {
-                println!("Clear frames of sprite {}", self.current_sprite);
+                info!("Clear frames of sprite {}", self.current_sprite);
                 self.sprites[self.current_sprite as usize].frames = Vec::new();
                 self.sprites[self.current_sprite as usize].current_frame = 0;
                 self.sprites[self.current_sprite as usize].visible = false;
             },
             6 => {
                 let n = self.read_byte();
-                println!("Add bitmap {} as frame to sprite {}",n,self.current_sprite);
+                info!("Add bitmap {} as frame to sprite {}",n,self.current_sprite);
                 match &self.bitmaps[n as usize] {
-                    None => {println!("No bitmap defined!");},
+                    None => {info!("No bitmap defined!");},
                     Some(_) => {self.sprites[self.current_sprite as usize].frames.push(n);} 
                 }
             },
             7 => {
                 let b = self.read_byte();
-                println!("Make {} sprites active",b);
+                info!("Make {} sprites active",b);
                 self.num_sprites=b;
 
             },
             8 => {
-                println!("Next frame on sprite {}",self.current_sprite);                
+                info!("Next frame on sprite {}",self.current_sprite);                
                 let nf = self.sprites[self.current_sprite as usize].frames.len();
                 let mut f = self.sprites[self.current_sprite as usize].current_frame as usize;
                 if f==nf-1 {
@@ -1113,7 +1113,7 @@ impl VDP<'_> {
                 self.sprites[self.current_sprite as usize].current_frame=f as u8;    
             },
             9 => {
-                println!("Previous frame on sprite {}",self.current_sprite);                
+                info!("Previous frame on sprite {}",self.current_sprite);                
                 let nf = self.sprites[self.current_sprite as usize].frames.len();
                 let mut f = self.sprites[self.current_sprite as usize].current_frame as usize;
                 if f==0 {
@@ -1127,49 +1127,49 @@ impl VDP<'_> {
             10 => {
                 let b = self.read_byte() as usize;
                 let nf = self.sprites[self.current_sprite as usize].frames.len();
-                println!("Set frame {} on sprite {}",b,self.current_sprite);
+                info!("Set frame {} on sprite {}",b,self.current_sprite);
                 if b<nf {
                     self.sprites[self.current_sprite as usize].current_frame=b as u8;
                 } else {
-                    println!("Frame out of range");
+                    info!("Frame out of range");
                 }
             },
             11 => {
-                println!("Show sprite {}",self.current_sprite);
+                info!("Show sprite {}",self.current_sprite);
                 if (self.sprites[self.current_sprite as usize].frames.len() > 0) {
                     self.sprites[self.current_sprite as usize].visible = true;
                 }
                 else
                 {
-                    println!("Try to show a sprite with no frames");
+                    info!("Try to show a sprite with no frames");
                 }                
             },
             12 => {
-                println!("Hide sprite {}",self.current_sprite);
+                info!("Hide sprite {}",self.current_sprite);
                 self.sprites[self.current_sprite as usize].visible = false; 
             },
             13 => {
                 let x=self.read_word();
                 let y=self.read_word();
-                println!("Mov sprite {} to {},{}",self.current_sprite,x,y);
+                info!("Mov sprite {} to {},{}",self.current_sprite,x,y);
                 self.sprites[self.current_sprite as usize].pos_x = x;
                 self.sprites[self.current_sprite as usize].pos_y = y;
             },
             14 => {
                 let x=self.read_word();
                 let y=self.read_word();
-                println!("Mov sprite {} by {},{}",self.current_sprite,x,y);
+                info!("Mov sprite {} by {},{}",self.current_sprite,x,y);
                 self.sprites[self.current_sprite as usize].pos_x += x;
                 self.sprites[self.current_sprite as usize].pos_y += y;
             },
             15 => {
                 // actually update num_sprites_shown.
                 self.num_sprites_shown = self.num_sprites;
-                println!("Refresh sprites!");
+                info!("Refresh sprites!");
             },
             16 => {
                 // Reset sprite system.
-                println!("Reset sprite system");
+                info!("Reset sprite system");
                 self.cls();
                 self.clear_sprites();
                 for bm in self.bitmaps.iter_mut() {
@@ -1178,7 +1178,7 @@ impl VDP<'_> {
                 self.current_bitmap = 0;
                 self.current_sprite = 0;
             },
-            _ => {println!("Unsupported Sprite Command {cmd}");}    
+            _ => {info!("Unsupported Sprite Command {cmd}");}    
         }
     }
 
@@ -1229,20 +1229,20 @@ impl VDP<'_> {
     fn print_terminal(&mut self, n: u8) {
         match n {
             n if n>=0x20 && n!=0x7f => {
-                println!("Terminal mode: printable char {}",n);
+                info!("Terminal mode: printable char {}",n);
                 self.render_char(n);
                 self.cursor.right();
                 self.check_scrolling_needed();
             }
-            0x08 => {println!("Terminal mode: BS."); self.cursor.left();},
+            0x08 => {info!("Terminal mode: BS."); self.cursor.left();},
             // Note: TAB is handled internally by CP/M BIOS.
             0x0A => {
-                println!("Terminal mode: LF.");
+                info!("Terminal mode: LF.");
                 self.cursor.down();
                 self.check_scrolling_needed();
             },
-            0x0D => {println!("Terminal mode: CR."); self.cursor.home();},
-            0x1b => {println!("Terminal mode: ESC.");
+            0x0D => {info!("Terminal mode: CR."); self.cursor.home();},
+            0x1b => {info!("Terminal mode: ESC.");
                      let (cmd,params) = self.parse_control();
                      match cmd {
                          b'A' => {
@@ -1250,7 +1250,7 @@ impl VDP<'_> {
                              if n==0 {
                                  n=1;
                              }
-                             println!("Cursor up {}",n);
+                             info!("Cursor up {}",n);
                              for _ in 0..n {
                                  self.cursor.up();
                              }
@@ -1260,7 +1260,7 @@ impl VDP<'_> {
                              if n==0 {
                                  n=1;
                              }
-                             println!("Cursor down {}",n);
+                             info!("Cursor down {}",n);
                              for _ in 0..n {
                                  self.cursor.down();
                                  self.check_scrolling_needed();
@@ -1271,7 +1271,7 @@ impl VDP<'_> {
                              if n==0 {
                                  n=1;
                              }
-                             println!("Cursor right {}",n);
+                             info!("Cursor right {}",n);
                              for _ in 0..n {
                                  self.cursor.right();
                                  self.check_scrolling_needed();
@@ -1282,7 +1282,7 @@ impl VDP<'_> {
                              if n==0 {
                                  n=1;
                              }
-                             println!("Cursor left {}",n);
+                             info!("Cursor left {}",n);
                              for _ in 0..n {
                                  self.cursor.left();
                              }
@@ -1299,7 +1299,7 @@ impl VDP<'_> {
                              if (col==0) {
                                  col=1;
                              }
-                             println!("Cursor position r={},c={}",row,col);
+                             info!("Cursor position r={},c={}",row,col);
                              let x = (col-1) as i32 * self.cursor.font_width;
                              let y = (row-1) as i32 * self.cursor.font_height;
                              if x < self.cursor.screen_width && y < self.cursor.screen_height
@@ -1310,7 +1310,7 @@ impl VDP<'_> {
                          },
                          b'J' => {
                              let n = params[0];
-                             println!("Clear screen {}",n);
+                             info!("Clear screen {}",n);
                              match n {
                                  0 => {
                                      self.clear_line(0);
@@ -1332,7 +1332,7 @@ impl VDP<'_> {
                          },
                          b'K' => {
                              let n = params[0];
-                             println!("Clear line {}",n);
+                             info!("Clear line {}",n);
                              self.clear_line(n);
                          },
                          b'L' => {
@@ -1340,7 +1340,7 @@ impl VDP<'_> {
                              if n==0 {
                                  n=1;
                              }
-                             println!("Insert lines {}",n);
+                             info!("Insert lines {}",n);
                              self.insert_lines(n);
                          },
                          b'M' => {
@@ -1348,47 +1348,47 @@ impl VDP<'_> {
                              if n==0 {
                                  n=1;
                              }
-                             println!("Delete lines {}",n);
+                             info!("Delete lines {}",n);
                              self.delete_lines(n);
                          },
                          b'm' => {
                              for attr in params.iter() {
                                  match attr {
                                      0 => { 
-                                         println!("Normal");
+                                         info!("Normal");
                                          self.foreground_color=Color::RGB(170, 170, 170);
                                          self.background_color=Color::RGB(0, 0, 0);
                                          self.terminal_reverse = false;
                                          self.terminal_underline = false;
                                      },
                                      1 => {
-                                         println!("Bold");
+                                         info!("Bold");
                                          self.foreground_color=Color::RGB(255, 255, 255);
                                      },
                                      4 => {
-                                         println!("Underline");
+                                         info!("Underline");
                                          self.terminal_underline = true;
                                      },
                                      7 => {
-                                         println!("Reverse");
+                                         info!("Reverse");
                                          self.terminal_reverse = true;
                                      },
                                      30..=37 => {
-                                         println!("Foreground");
+                                         info!("Foreground");
                                          self.foreground_color = *self.current_video_mode.palette[(attr-30) as usize];                                         
                                      },
                                      40..=47 => {
-                                         println!("Background");
+                                         info!("Background");
                                          self.background_color = *self.current_video_mode.palette[(attr-40) as usize];                                         
                                      },
-                                     _ => {println!("Unimplemented attribute code {}",attr);},
+                                     _ => {info!("Unimplemented attribute code {}",attr);},
                                  }
                              }
                          },                         
-                         _ => {println!("Unimplemented ESC command {}",cmd);},
+                         _ => {info!("Unimplemented ESC command {}",cmd);},
                      }
             },
-            _ => {println!("Unimplemented control char {}",n); },    
+            _ => {info!("Unimplemented control char {}",n); },    
         }
     }
 

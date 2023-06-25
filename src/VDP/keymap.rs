@@ -183,7 +183,7 @@ pub fn fabgl_virtual_key_to_ascii(fabgl_vk: &FabGlVirtualKey) -> u8 {
 }
 
 pub fn sdl_scancode_to_fbgl_virtual_key(scancode: &Scancode, keymod: &Mod) -> FabGlVirtualKey {
-    println!("scancode: {}, keymod: {:?}", scancode, keymod);
+    log::info!("scancode: {}, keymod: {:?}", scancode, keymod);
     let shift = keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD);
     let caps_lock = keymod.intersects(Mod::CAPSMOD);
     match scancode {
