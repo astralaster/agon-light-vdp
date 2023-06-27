@@ -5,8 +5,7 @@ use std::time::{Instant};
 use sdl2::keyboard::{Mod, Scancode};
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::rect::{Point, Rect};
-use sdl2::render::{Canvas, SurfaceCanvas, Texture, TextureCreator,BlendMode};
-use sdl2::surface::Surface;
+use sdl2::render::{Canvas, Texture, TextureCreator,BlendMode};
 use sdl2::video::{Window, WindowContext};
 mod font;
 use font::font::FONT_BYTES;
@@ -257,10 +256,10 @@ impl VDP<'_> {
                 }
             }
         }
-        if (self.terminal_mode) {
+        if self.terminal_mode {
             //TODO handle cursor keys.
             if down {
-                self.tx.send(ascii);
+                self.tx.send(ascii).unwrap();
             }
         } else {
             let mut modifiers: u8 = 0;
@@ -336,10 +335,10 @@ impl VDP<'_> {
 
             self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
                 texture_canvas.set_draw_color(if self.terminal_reverse {self.foreground_color} else {self.background_color});
-                texture_canvas.fill_rect(Rect::new(self.cursor.position_x, self.cursor.position_y, 8, self.cursor.font_height as u32));
+                texture_canvas.fill_rect(Rect::new(self.cursor.position_x, self.cursor.position_y, 8, self.cursor.font_height as u32)).unwrap();
                 texture_canvas.set_draw_color(if self.terminal_reverse {self.background_color} else {self.foreground_color});
-                texture_canvas.draw_points(&points[..]);
-            });
+                texture_canvas.draw_points(&points[..]).unwrap();
+            }).unwrap();
         }
     }
 
@@ -365,7 +364,7 @@ impl VDP<'_> {
             let scale_x = output_size.0 as f32 / self.current_video_mode.screen_width as f32;
             let scale_y = output_size.1 as f32 / self.current_video_mode.screen_height as f32;
             
-            self.canvas.fill_rect(Rect::new((self.cursor.position_x as f32 * scale_x) as i32, (self.cursor.position_y as f32 * scale_y) as i32, (8f32 * scale_x) as u32, (self.cursor.font_height as f32 * scale_y) as u32));
+            self.canvas.fill_rect(Rect::new((self.cursor.position_x as f32 * scale_x) as i32, (self.cursor.position_y as f32 * scale_y) as i32, (8f32 * scale_x) as u32, (self.cursor.font_height as f32 * scale_y) as u32)).unwrap();
         }
     }
 
@@ -380,7 +379,7 @@ impl VDP<'_> {
         self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
             texture_canvas.set_draw_color(self.background_color);
             texture_canvas.clear();
-        });
+        }).unwrap();
         self.num_sprites = 0;
         self.num_sprites_shown = 0;
         self.cursor.position_x = 0;
@@ -392,7 +391,7 @@ impl VDP<'_> {
         self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
             texture_canvas.set_draw_color(self.background_color);
             texture_canvas.clear();
-        });
+        }).unwrap();
     }
 
     fn color(&mut self, c: u8) {
@@ -440,8 +439,7 @@ impl VDP<'_> {
         if dy == 0 {
             xc.push(bot.x)
         } else {
-            let mut y = top.y;
-            if (dx > dy) {
+            if dx > dy {
                 let mut t = -dx/2;
                 let mut y = top.y;
                 // 'horizontal line', iterate over x.
@@ -449,23 +447,23 @@ impl VDP<'_> {
                 if top.x < bot.x {
                     for x in top.x..=bot.x {
                         t = t+dy;
-                        if (t>0) {
-                            t=t-dx;
-                            if (y!=bot.y && y!=top.y) { 
+                        if t > 0  {
+                            t = t - dx;
+                            if y != bot.y && y != top.y { 
                                 xc.push(x);
                             }
-                            y=y+1;
+                            y = y + 1;
                         }
                     }
                 } else {
                     for x in (bot.x..=top.x).rev() {
-                        t = t+dy;
-                        if (t>0) {
+                        t = t + dy;
+                        if t > 0 {
                             t=t-dx;
-                            if (y!=bot.y && y!=top.y) { 
+                            if y != bot.y && y != top.y { 
                                 xc.push(x);
                             }
-                            y=y+1;
+                            y = y + 1;
                         }
                     }
                 }
@@ -474,16 +472,16 @@ impl VDP<'_> {
                 // 'vertical line', iterate over y, assume top.y < bot.y
                 let mut t = -dy/2;
                 let mut x = top.x;
-                for y in top.y..=bot.y {
+                for _y in top.y..=bot.y {
                     xc.push(x);
                     t += dx;
-                    if t>0 {
+                    if t > 0 {
                         if top.x > bot.x {
-                            x-=1;
+                            x -= 1;
                         } else {
-                            x+=1;
+                            x += 1;
                         }
-                        t=t-dy;
+                        t = t - dy;
                     }
                 }
             }
@@ -502,11 +500,11 @@ impl VDP<'_> {
                 4 => {info!("MOVETO");},
                 5 => {
                     info!("LINETO");
-                    texture_canvas.draw_line(self.p1,self.p2);
+                    texture_canvas.draw_line(self.p1,self.p2).unwrap();
                 },
                 64..=71 => {
                     info!("PLOTDOT");
-                    texture_canvas.draw_point(self.p1);
+                    texture_canvas.draw_point(self.p1).unwrap();
                 },
                 80..=87 => {
                     info!("TRIANGLE");
@@ -514,15 +512,15 @@ impl VDP<'_> {
                     let mut pmid : Point = self.p2;
                     let mut pbot : Point = self.p3;
                     // Order the points from top to bottom.
-                    if (ptop.y > pmid.y)
+                    if ptop.y > pmid.y
                     {
                         (ptop,pmid) = (pmid,ptop);
                     }
-                    if (ptop.y > pbot.y)
+                    if ptop.y > pbot.y
                     {
                         (ptop,pbot) = (pbot,ptop);
                     }
-                    if (pmid.y > pbot.y)
+                    if pmid.y > pbot.y
                     {
                         (pmid,pbot) = (pbot,pmid);
                     }
@@ -532,17 +530,17 @@ impl VDP<'_> {
                     // Draw horizontal lines between them.
                     let xv1 = Self::line_xcoords(ptop, pbot);
                     let mut xv2 = Self::line_xcoords(ptop, pmid);
-                    xv2.append((&mut Self::line_xcoords(pmid,pbot)[1..].to_vec()));
+                    xv2.append(&mut Self::line_xcoords(pmid,pbot)[1..].to_vec());
                     let mut y = ptop.y;
                     for (i,x1) in xv1.iter().enumerate() {
                         let x2 = xv2[i];
-                        texture_canvas.draw_line(Point::new(*x1,y),Point::new(x2,y));
+                        texture_canvas.draw_line(Point::new(*x1,y),Point::new(x2,y)).unwrap();
                         y += 1;
                     }
                 },
                 144..=151 => {
-                    let mut r: f32 = 0.0;
-                    if (mode < 148) {
+                    let r;
+                    if mode < 148 {
                         r = ((self.p1.x * self.p1.x + self.p1.y * self.p1.y) as f32).sqrt();
                     } else {
                         let rx = self.p1.x - self.p2.x;
@@ -559,21 +557,21 @@ impl VDP<'_> {
                         pold = pnew;
                         pnew = Point::new(self.p2.x + ((r*angle.cos()) as i32),
                                           self.p2.y + ((r*angle.sin()) as i32));
-                        texture_canvas.draw_line(pold,pnew);                    
+                        texture_canvas.draw_line(pold,pnew).unwrap();                    
                     }
-                    texture_canvas.draw_line(pnew,pstart);
+                    texture_canvas.draw_line(pnew,pstart).unwrap();
                 },
                 _ => {warn!("Unsupported plot mode!");}
             }
-        });        
+        }).unwrap();        
     }    
 
     fn get_screen_char(&mut self, x: i16, y: i16) -> u8 {
         let mut c: u8 = 0;
-        if (x >= 0 &&
+        if  x >= 0 &&
             x < (self.cursor.screen_width/self.cursor.font_width) as i16 &&
             y >= 0 &&
-            y <  (self.cursor.screen_height/self.cursor.font_height) as i16) {
+            y <  (self.cursor.screen_height/self.cursor.font_height) as i16 {
             self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
                 let rect = Rect::new((x*8) as i32, (y*8) as i32, 8, 8);
                 let v=texture_canvas.read_pixels(rect,PixelFormatEnum::RGB888).unwrap();
@@ -600,7 +598,7 @@ impl VDP<'_> {
                         break;
                     }
                 }
-            });            
+            }).unwrap();            
         }
         c
     }
@@ -608,8 +606,8 @@ impl VDP<'_> {
     fn get_screen_pixel(&mut self, x: i16, y: i16) -> Color {
         let p1 = self.translate(self.scale(Point::new(x as i32,y as i32)));
         let mut rgb = Color::RGB(0,0,0);
-        if (p1.x >=0 && p1.x < self.current_video_mode.screen_width as i32 &&
-            p1.y >=0 && p1.y < self.current_video_mode.screen_height as i32) {
+        if p1.x >=0 && p1.x < self.current_video_mode.screen_width as i32 &&
+            p1.y >=0 && p1.y < self.current_video_mode.screen_height as i32 {
             self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
                 let rect = Rect::new(p1.x, p1.y, 1, 1);
                 let v=texture_canvas.read_pixels(rect,PixelFormatEnum::RGB888).unwrap();
@@ -617,7 +615,7 @@ impl VDP<'_> {
                 rgb.r=v[2]; 
                 rgb.g=v[1]; 
                 rgb.b=v[0]; 
-            });
+            }).unwrap();
         }
         rgb
     }
@@ -645,7 +643,7 @@ impl VDP<'_> {
         output.push(len);
         output.append(data);
         for byte in output.iter() {
-            self.tx.send(*byte);
+            self.tx.send(*byte).unwrap();
         }
         info!("Send packet to MOS: {:#02X?}", output);
     }
@@ -750,7 +748,7 @@ impl VDP<'_> {
                                 },
                                 0x01 => {
                                     let b = self.read_byte();
-                                    self.cursor_enabled = (b!=0);
+                                    self.cursor_enabled = b != 0;
                                     info!("Cursor Enable : P{}\n",self.cursor_enabled);
                                 },
                                 0x07 =>  {
@@ -758,7 +756,7 @@ impl VDP<'_> {
                                     let d = self.read_byte();
                                     let m = self.read_byte();
                                     info!("Scroll: full {} dir {} movement {}",extent,d,m);
-                                    self.scroll(extent!=0, d, m);    
+                                    self.scroll(d, m);    
                                 },
                                 0x1B => {
                                     info!("Sprite Control");
@@ -880,7 +878,7 @@ impl VDP<'_> {
             },
             0xC0 => {
                 let b = self.read_byte();
-                self.logical_coords = (b!=0);
+                self.logical_coords = b != 0;
                 info!("Set logical coords {}\n",self.logical_coords);
             },
             0xff => {
@@ -891,15 +889,14 @@ impl VDP<'_> {
         }
     }
 
-    fn scroll(&mut self, fullscreen: bool, direction: u8, delta: u8) {
+    fn scroll(&mut self, direction: u8, delta: u8) {
         let mut xsrc : i32 = 0;
         let mut xdst : i32 = 0;
         let mut ysrc : i32 = 0;
         let mut ydst : i32 = 0;
-        let mut xsize : u32 = 0;
-        let mut ysize: u32 = 0;
-        xsize = self.current_video_mode.screen_width;
-        ysize = self.current_video_mode.screen_height;
+        let mut xsize : u32 = self.current_video_mode.screen_width;
+        let mut ysize: u32 = self.current_video_mode.screen_height;
+
         match direction {
             0 => { // right
                 xsize -= delta as u32;
@@ -925,8 +922,8 @@ impl VDP<'_> {
             texture_canvas.clear();
             let rect_src = Rect::new(xsrc, ysrc, xsize, ysize);
             let rect_dst = Rect::new(xdst, ydst, xsize, ysize);
-            texture_canvas.copy(&self.texture, rect_src, rect_dst);
-        });        
+            texture_canvas.copy(&self.texture, rect_src, rect_dst).unwrap();
+        }).unwrap();        
         self.texture = scrolled_texture;
     }
 
@@ -949,9 +946,9 @@ impl VDP<'_> {
     }
 
     fn keyboard_state(&mut self) {
-        let d = self.read_byte();
-        let r = self.read_byte();
-        let b = self.read_byte(); // Just consume those bytes, don't implement.
+        let _d = self.read_byte();
+        let _r = self.read_byte();
+        let _b = self.read_byte(); // Just consume those bytes, don't implement.
         let mut packet: Vec<u8> = vec![0, 0, 0, 0, 0];
         self.send_packet(0x08, packet.len() as u8, &mut packet);        
     }
@@ -970,8 +967,8 @@ impl VDP<'_> {
                 texture_canvas.clear();
                 let rect_src = Rect::new(0, overdraw, self.current_video_mode.screen_width, self.current_video_mode.screen_height - overdraw as u32);
                 let rect_dst = Rect::new(0, 0, self.current_video_mode.screen_width, self.current_video_mode.screen_height - overdraw as u32);
-                texture_canvas.copy(&self.texture, rect_src, rect_dst);
-            });
+                texture_canvas.copy(&self.texture, rect_src, rect_dst).unwrap();
+            }).unwrap();
             self.texture = scrolled_texture;
             self.cursor.position_y -= overdraw;
         }
@@ -1071,8 +1068,8 @@ impl VDP<'_> {
                         self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
                             texture_canvas.copy(&bm,
                                                 None,
-                                                Some(Rect::new(x as i32,y as i32,sx,sy)));
-                        });
+                                                Some(Rect::new(x as i32,y as i32,sx,sy))).unwrap();
+                        }).unwrap();
                     },
                 }
             },
@@ -1097,18 +1094,18 @@ impl VDP<'_> {
             },
             7 => {
                 let b = self.read_byte();
-                info!("Make {} sprites active",b);
-                self.num_sprites=b;
+                info!("Make {} sprites active", b);
+                self.num_sprites = b;
 
             },
             8 => {
                 info!("Next frame on sprite {}",self.current_sprite);                
                 let nf = self.sprites[self.current_sprite as usize].frames.len();
                 let mut f = self.sprites[self.current_sprite as usize].current_frame as usize;
-                if f==nf-1 {
-                    f=0;
+                if f == nf - 1 {
+                    f = 0;
                 } else {
-                    f=f+1;
+                    f = f + 1;
                 }
                 self.sprites[self.current_sprite as usize].current_frame=f as u8;    
             },
@@ -1136,7 +1133,7 @@ impl VDP<'_> {
             },
             11 => {
                 info!("Show sprite {}",self.current_sprite);
-                if (self.sprites[self.current_sprite as usize].frames.len() > 0) {
+                if self.sprites[self.current_sprite as usize].frames.len() > 0 {
                     self.sprites[self.current_sprite as usize].visible = true;
                 }
                 else
@@ -1205,7 +1202,7 @@ impl VDP<'_> {
                 let sy=q.height;
                 self.canvas.copy(bm, None,
                                  Rect::new((s.pos_x as f32 * scale_x) as i32, (s.pos_y as f32 * scale_y) as i32, sx * scale_x as u32, sy * scale_y as u32)                                 
-                );
+                ).unwrap();
             }
             idx+=1;
         }
@@ -1222,7 +1219,7 @@ impl VDP<'_> {
         self.cursor.font_width = 8;
         self.change_mode(3); // This is different from real Agon, which supports termianl mode on top of any video mode.
         self.foreground_color=Color::RGB(170, 170, 170);
-        self.tx.send(0); // CP/M waits for a byte to be returned.
+        self.tx.send(0).unwrap(); // CP/M waits for a byte to be returned.
         self.terminal_mode = true;
     }
 
@@ -1293,11 +1290,11 @@ impl VDP<'_> {
                              if params.len()>=2 {
                                  col = params[1];
                              }
-                             if (row==0) {
-                                 row=1;
+                             if row == 0 {
+                                 row = 1;
                              }
-                             if (col==0) {
-                                 col=1;
+                             if col == 0 {
+                                 col = 1;
                              }
                              info!("Cursor position r={},c={}",row,col);
                              let x = (col-1) as i32 * self.cursor.font_width;
@@ -1325,7 +1322,7 @@ impl VDP<'_> {
                                      self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
                                          texture_canvas.set_draw_color(self.background_color);
                                          texture_canvas.clear();
-                                     });
+                                     }).unwrap();
                                  },
                                  _ => {},
                              }                            
@@ -1409,8 +1406,8 @@ impl VDP<'_> {
         if dx > 0 {
             self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
                 texture_canvas.set_draw_color(self.background_color);
-                texture_canvas.fill_rect(Rect::new(posx, posy, dx as u32, dy as u32));
-            });
+                texture_canvas.fill_rect(Rect::new(posx, posy, dx as u32, dy as u32)).unwrap();
+            }).unwrap();
         }
     }
 
@@ -1419,8 +1416,8 @@ impl VDP<'_> {
            let  w=self.cursor.screen_width;
             self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
                 texture_canvas.set_draw_color(self.background_color);
-                texture_canvas.fill_rect(Rect::new(0, start, w as u32, h as u32));
-            });
+                texture_canvas.fill_rect(Rect::new(0, start, w as u32, h as u32)).unwrap();
+            }).unwrap();
         }
     }
 
@@ -1437,11 +1434,11 @@ impl VDP<'_> {
             let rect_unchanged = Rect::new(0,0,width,start as u32);
             texture_canvas.set_draw_color(self.background_color);
             texture_canvas.clear();
-            texture_canvas.copy(&self.texture, rect_unchanged, rect_unchanged);
+            texture_canvas.copy(&self.texture, rect_unchanged, rect_unchanged).unwrap();
             let rect_src = Rect::new(0, start+blanks, width, scrolled as u32);
             let rect_dst = Rect::new(0, start, width, scrolled as u32);
-            texture_canvas.copy(&self.texture, rect_src, rect_dst);
-        });        
+            texture_canvas.copy(&self.texture, rect_src, rect_dst).unwrap();
+        }).unwrap();        
         self.texture = scrolled_texture;        
     }
         
@@ -1459,11 +1456,11 @@ impl VDP<'_> {
             let rect_unchanged = Rect::new(0,0,width,start as u32);
             texture_canvas.set_draw_color(self.background_color);
             texture_canvas.clear();
-            texture_canvas.copy(&self.texture, rect_unchanged, rect_unchanged);
+            texture_canvas.copy(&self.texture, rect_unchanged, rect_unchanged).unwrap();
             let rect_src = Rect::new(0, start, width, scrolled as u32);
             let rect_dst = Rect::new(0, start+blanks, width, scrolled as u32);
-            texture_canvas.copy(&self.texture, rect_src, rect_dst);
-        });        
+            texture_canvas.copy(&self.texture, rect_src, rect_dst).unwrap();
+        }).unwrap();        
         self.texture = scrolled_texture;        
     }
         
