@@ -16,7 +16,7 @@ use chrono::{Local,DateTime,Datelike,Timelike};
 mod audio;
 use audio::audio::AudioChannels;
 use sdl2::AudioSubsystem;
-use log::info;
+use log::{info, warn};
 mod keymap;
 use self::keymap::*;
 
@@ -563,7 +563,7 @@ impl VDP<'_> {
                     }
                     texture_canvas.draw_line(pnew,pstart);
                 },
-                _ => {info!("Unsupported plot mode");}
+                _ => {warn!("Unsupported plot mode!");}
             }
         });        
     }    
@@ -887,7 +887,7 @@ impl VDP<'_> {
                 info!("Switch to terminal mode\n");
                 self.switch_terminal_mode();
             }
-            n => info!("Unknown VSC command: {:#02X?}.", n),
+            n => warn!("Unknown VSC command: {:#02X?}.", n),
         }
     }
 
@@ -1178,7 +1178,7 @@ impl VDP<'_> {
                 self.current_bitmap = 0;
                 self.current_sprite = 0;
             },
-            _ => {info!("Unsupported Sprite Command {cmd}");}    
+            _ => {warn!("Unsupported Sprite Command {cmd}!");}    
         }
     }
 
