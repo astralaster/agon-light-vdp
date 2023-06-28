@@ -15,7 +15,7 @@ use chrono::{Local,DateTime,Datelike,Timelike};
 mod audio;
 use audio::audio::AudioChannels;
 use sdl2::AudioSubsystem;
-use log::{debug, info, warn};
+use log::{debug, info, warn, error};
 mod keymap;
 use self::keymap::*;
 
@@ -827,15 +827,15 @@ impl VDP<'_> {
                 self.general_poll();
             },
             0x81 => {
-                info!("Set keyboard layout to: ");
+                
                 let keyboard_layout = self.read_byte();
                 match keyboard_layout {
                     0x01 => {
-                        println!("US");
+                        info!("Set keyboard layout to US");
                         self.keyboard_layout = Box::new(KeyboardLayoutUS);
                     },
                     0x02 => {
-                        println!("DE");
+                        info!("Set keyboard layout to DE");
                         self.keyboard_layout = Box::new(KeyboardLayoutDE);
                     },
                     _ => {
@@ -887,10 +887,10 @@ impl VDP<'_> {
             0xC0 => {
                 let b = self.read_byte();
                 self.logical_coords = b != 0;
-                info!("Set logical coords {}\n",self.logical_coords);
+                info!("Set logical coords {}", self.logical_coords);
             },
             0xff => {
-                info!("Switch to terminal mode\n");
+                info!("Switch to terminal mode");
                 self.switch_terminal_mode();
             }
             n => warn!("Unknown VSC command: {:#02X?}.", n),
@@ -1068,7 +1068,7 @@ impl VDP<'_> {
                 let y=self.read_word();
                 info!("Draw bitmap {} at {},{}",self.current_bitmap,x,y);
                 match &self.bitmaps[self.current_bitmap as usize] {
-                    None => {info!("Undefined bitmap");},
+                    None => {error!("Undefined bitmap");},
                     Some(bm) => { 
                         let q = bm.query();
                         let sx = q.width;
@@ -1096,7 +1096,7 @@ impl VDP<'_> {
                 let n = self.read_byte();
                 info!("Add bitmap {} as frame to sprite {}",n,self.current_sprite);
                 match &self.bitmaps[n as usize] {
-                    None => {info!("No bitmap defined!");},
+                    None => {error!("No bitmap defined!");},
                     Some(_) => {self.sprites[self.current_sprite as usize].frames.push(n);} 
                 }
             },
