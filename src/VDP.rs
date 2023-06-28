@@ -491,6 +491,7 @@ impl VDP<'_> {
     }
     
     fn plot(&mut self, mode: u8, x: i16, y: i16) {
+        let p4 = self.p3;
         self.p3 = self.p2;
         self.p2 = self.p1;
         self.p1 = self.translate(self.scale(Point::new(x as i32,y as i32)));
@@ -561,9 +562,16 @@ impl VDP<'_> {
                     }
                     texture_canvas.draw_line(pnew,pstart).unwrap();
                 },
-                _ => {warn!("Unsupported plot mode!");}
+                _ => {
+                    warn!("Unsupported plot mode!");
+                    // Reverting points to previous state.
+                    self.p1 = self.p2;
+                    self.p2 = self.p3;
+                    self.p3 = p4;
+                }
             }
         }).unwrap();        
+
     }    
 
     fn get_screen_char(&mut self, x: i16, y: i16) -> u8 {
