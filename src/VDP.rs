@@ -612,18 +612,25 @@ impl VDP<'_> {
     }
 
     fn get_screen_pixel(&mut self, x: i16, y: i16) -> Color {
-        let p1 = self.translate(self.scale(Point::new(x as i32,y as i32)));
+        let mut p1 = self.translate(self.scale(Point::new(x as i32,y as i32)));
         let mut rgb = Color::RGB(0,0,0);
         if p1.x >=0 && p1.x < self.current_video_mode.screen_width as i32 &&
             p1.y >=0 && p1.y < self.current_video_mode.screen_height as i32 {
-            self.canvas.with_texture_canvas(&mut self.texture, |texture_canvas| {
+                // Scale the point coordinates to the output size.
+                let output_size = self.canvas.output_size().unwrap();
+                let scale_x = output_size.0 as f32 / self.current_video_mode.screen_width as f32;
+                let scale_y = output_size.1 as f32 / self.current_video_mode.screen_height as f32;
+
+                p1.x = (p1.x as f32 * scale_x) as i32;
+                p1.y = (p1.y as f32 * scale_y) as i32;
+
                 let rect = Rect::new(p1.x, p1.y, 1, 1);
-                let v=texture_canvas.read_pixels(rect,PixelFormatEnum::RGB888).unwrap();
-                info!("Pixel data = {},{},{},{}",v[0],v[1],v[2],v[3]);
+                let v = self.canvas.read_pixels(rect, PixelFormatEnum::RGB888).unwrap();
+                info!("Pixel at {},{} = {},{},{}", p1.x, p1.y, v[0], v[1], v[2]);
+
                 rgb.r=v[2]; 
                 rgb.g=v[1]; 
                 rgb.b=v[0]; 
-            }).unwrap();
         }
         rgb
     }
