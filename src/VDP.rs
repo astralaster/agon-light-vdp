@@ -15,7 +15,7 @@ use chrono::{Local,DateTime,Datelike,Timelike};
 mod audio;
 use audio::audio::AudioChannels;
 use sdl2::AudioSubsystem;
-use log::{info, warn};
+use log::{debug, info, warn};
 mod keymap;
 use self::keymap::*;
 
@@ -653,7 +653,7 @@ impl VDP<'_> {
         for byte in output.iter() {
             self.tx.send(*byte).unwrap();
         }
-        info!("Send packet to MOS: {:#02X?}", output);
+        debug!("Send packet to MOS: {:#02X?}", output);
     }
 
     fn read_byte(&mut self) -> u8 {
@@ -857,8 +857,8 @@ impl VDP<'_> {
             0x84 => {
                 let x = self.read_word();
                 let y = self.read_word();
-                let rgb = self.get_screen_pixel(x,y);
                 info!("Get screen pixel at {},{}",x,y);
+                let rgb = self.get_screen_pixel(x,y);
                 self.send_screen_pixel(rgb);
             },
             0x85 => {
