@@ -1143,7 +1143,7 @@ impl VDP<'_> {
                 if b<nf {
                     self.sprites[self.current_sprite as usize].current_frame=b as u8;
                 } else {
-                    info!("Frame out of range");
+                    error!("Frame out of range");
                 }
             },
             11 => {
@@ -1153,7 +1153,7 @@ impl VDP<'_> {
                 }
                 else
                 {
-                    info!("Try to show a sprite with no frames");
+                    error!("Try to show a sprite with no frames");
                 }                
             },
             12 => {
